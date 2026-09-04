@@ -43,6 +43,10 @@ const (
 	// backoff is minutes to hours, so an honest end-to-end gate either
 	// compresses time or never observes an outcome. The compression is recorded
 	// in the ledger; see worker.Config.DemoTimeScale.
+	// selftestDataDir is this gate's own PostgreSQL cluster, kept away from the
+	// one `go run ./cmd/mesh` warms up so neither can spoil the other.
+	selftestDataDir = ".mesh/selftest"
+
 	selftestSpeed = 600
 
 	// selftestRate and selftestDuration size the scripted outage. Enough
@@ -112,7 +116,24 @@ func cmdSelftest(ctx context.Context, g globals, out io.Writer) error {
 	cfg.HTTPAddr = "127.0.0.1:0"
 	cfg.RazorpayBaseURL = sim.BaseURL()
 
-	a, err := app.New(ctx, cfg, app.Options{Logger: log})
+	// The self-test gets a database of its own, emptied first.
+	//
+	// It ends by forging a ledger row and requiring that the forgery is
+	// detected, and it does not repair the row afterwards, because a system with
+	// a repair path for its own audit trail does not have an audit trail. A
+	// shared data directory therefore carried one run's deliberate forgery into
+	// the next, which failed before it had written anything:
+	//
+	//	the ledger was already broken at sequence 81 before any tampering
+	//
+	// Starting empty is also what makes the gate mean what it says. A pass has
+	// to be evidence that this run recovered a payment, not that some earlier
+	// run left a recovered one lying about.
+	if err := os.RemoveAll(selftestDataDir); err != nil {
+		return fmt.Errorf("clearing the previous self-test database at %s: %w",
+			selftestDataDir, err)
+	}
+	a, err := app.New(ctx, cfg, app.Options{Logger: log, ManagedDataDir: selftestDataDir})
 	if err != nil {
 		return fmt.Errorf("building the system: %w", err)
 	}

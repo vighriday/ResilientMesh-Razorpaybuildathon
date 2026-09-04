@@ -183,13 +183,38 @@ gate 'Deterministic simulation: full drain with no injected faults' \
 section 'Recovery measurement'
 
 BENCH=artifacts/benchmark.json
-PY=python3; command -v python3 >/dev/null 2>&1 || PY=python
 
-gate "Recovery benchmark across four policies ($INCIDENTS incidents)" \
-  "$PY" eval/benchmark.py --incidents "$INCIDENTS" --seed "$SEED" --out "$BENCH"
+# Finding a Python that actually runs.
+#
+# `command -v python` succeeds on Windows even when no Python is installed: the
+# name resolves to a Microsoft Store stub that prints an advertisement and exits
+# non-zero. Probing for the name therefore selected an interpreter that could
+# not run anything, and this gate failed with a shopping suggestion attached to
+# it. Each candidate is asked to execute something instead of merely to exist.
+PY=
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1 &&
+     "$candidate" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+    PY=$candidate
+    break
+  fi
+done
 
-gate 'Benchmark self-tests' --optional \
-  "$PY" -m pytest eval/test_benchmark.py -q
+if [ -z "$PY" ]; then
+  # The benchmark measures this policy against three incumbents. It is evidence
+  # about how well the system does its job, not about whether the system is
+  # correct, and every correctness gate above ran without it. A missing optional
+  # toolchain must not be reported as a failing system.
+  gate_skip 'Recovery benchmark across four policies' \
+    'no working Python 3 found; install one and re-run to measure recovery'
+  gate_skip 'Benchmark self-tests' 'no working Python 3 found'
+else
+  gate "Recovery benchmark across four policies ($INCIDENTS incidents)" \
+    "$PY" eval/benchmark.py --incidents "$INCIDENTS" --seed "$SEED" --out "$BENCH"
+
+  gate 'Benchmark self-tests' --optional \
+    "$PY" -m pytest eval/test_benchmark.py -q
+fi
 
 # ---------------------------------------------------------------------------
 section 'Audit trail'
@@ -225,7 +250,7 @@ SKIP=$(printf '%s\n' "${ROWS[@]}" | grep -c '| SKIP |' || true)
   echo '|---|---|---|'
   printf '%s\n' "${ROWS[@]}"
   echo
-  if [ -f "$BENCH" ]; then
+  if [ -n "$PY" ] && [ -f "$BENCH" ]; then
     echo '## Recovery'
     echo
     "$PY" - "$BENCH" <<'PY'
