@@ -156,9 +156,11 @@ running mesh, so give it that mesh's endpoints — `cmd/mesh` logs the managed
 PostgreSQL and Redis ports at startup:
 
 ```bash
-# From the mesh's startup log line "managed infrastructure ready"
+# cmd/mesh logs its managed ports on the "managed infrastructure ready" line.
+# The managed credentials are generated per run and printed there too.
 export MESH_INFRA_MODE=external
-export MESH_PG_DSN='postgres://mesh:mesh@127.0.0.1:<pg_port>/mesh?sslmode=disable'
+export PGUSER=mesh PGPASSWORD=mesh PGPORT=<pg_port>
+export MESH_PG_DSN="postgres://${PGUSER}:${PGPASSWORD}@127.0.0.1:${PGPORT}/mesh?sslmode=disable"
 export MESH_REDIS_ADDR=127.0.0.1:<redis_port>
 export MESH_WEBHOOK_SECRET=placeholder   # required in external mode; unused by reads
 export MESH_OPS_TOKEN=placeholder
