@@ -203,8 +203,22 @@ func (p *Poller) Signals(issuerKey string) []domain.DowntimeSignal {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	// Iterated in id order rather than in map order. The comparator below can
+	// only see MatchesIssuer and TelemetryKey, so two notices affecting one
+	// issuer tie completely and Go's randomised map order survives the sort.
+	// This slice feeds the diagnostic context digest, so an unstable order means
+	// identical evidence produces different digests — which silently breaks
+	// cassette replay and makes the "same evidence, same decision" guarantee
+	// false.
+	ids := make([]string, 0, len(p.seen))
+	for id := range p.seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
 	out := make([]domain.DowntimeSignal, 0, len(p.seen))
-	for _, d := range p.seen {
+	for _, id := range ids {
+		d := p.seen[id]
 		key := d.TelemetryKey()
 		out = append(out, domain.DowntimeSignal{
 			TelemetryKey:  key,
@@ -216,8 +230,8 @@ func (p *Poller) Signals(issuerKey string) []domain.DowntimeSignal {
 			MatchesIssuer: key == issuerKey,
 		})
 	}
-	// Sorted so identical evidence produces an identical digest.
-	sort.Slice(out, func(i, j int) bool {
+	// Stable, so the id order established above survives ties on both keys.
+	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].MatchesIssuer != out[j].MatchesIssuer {
 			return out[i].MatchesIssuer // matching notices first
 		}
@@ -265,10 +279,20 @@ func (p *Poller) fetch(ctx context.Context) (domain.DowntimeList, error) {
 	if err != nil {
 		return out, fmt.Errorf("downtime: reading response: %w", err)
 	}
-	if err := json.Unmarshal(body, &out); err != nil {
+	// Unmarshalled through a pointer so a bare `null` is distinguishable from an
+	// empty listing. Into a value it decodes cleanly to the zero struct, and an
+	// upstream returning null would read as "no issuer is down" — clearing a
+	// valid cached view and firing a resolution for every active notice, which
+	// releases every parked retry into an outage that is still happening. That
+	// is the opposite of what Run's own comment promises.
+	var decoded *domain.DowntimeList
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		return out, fmt.Errorf("downtime: response was not a valid listing (%d bytes)", len(body))
 	}
-	return out, nil
+	if decoded == nil {
+		return out, fmt.Errorf("downtime: response body was null rather than a listing (%d bytes)", len(body))
+	}
+	return *decoded, nil
 }
 
 func (p *Poller) count(name string) {
