@@ -145,6 +145,10 @@ func (s *fakeStore) GetIncident(context.Context, string) (domain.Incident, error
 // The scheduling surface is unused by this package's tests, but domain.Store is
 // one contract: a fake that implements only the convenient half would compile
 // today and fail to notice the day this package starts deferring work.
+func (s *fakeStore) RecordOutboxFailure(context.Context, int64, string) error { return nil }
+
+func (s *fakeStore) ReleaseOutboxClaim(context.Context, []int64) error { return nil }
+
 func (s *fakeStore) ScheduleIncident(context.Context, string, time.Time) error {
 	return errors.New("fakeStore: ScheduleIncident is not exercised by these tests")
 }

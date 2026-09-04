@@ -43,6 +43,17 @@ type Config struct {
 	DrainTimeout time.Duration
 }
 
+const (
+	// probeTimeout bounds the queue health check taken after a publish failure.
+	// It is short because the answer is only used to classify a failure that
+	// has already happened, and a slow probe would hold the batch open.
+	probeTimeout = 2 * time.Second
+
+	// releaseTimeout bounds handing leased rows back. Short for the same
+	// reason: failing to release is recoverable, because the lease expires.
+	releaseTimeout = 3 * time.Second
+)
+
 // DefaultConfig returns settings sized for the demo and for CI.
 func DefaultConfig() Config {
 	return Config{
@@ -182,8 +193,15 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 	dispatched := make([]int64, 0, len(batch))
 	var firstErr error
 
-	for _, ev := range batch {
+	// unpublished tracks the tail of the batch abandoned after a failure, so
+	// those rows can be handed back explicitly rather than left leased until
+	// their lease expires.
+	var unpublished []int64
+	failedAt := -1
+
+	for i, ev := range batch {
 		if ctx.Err() != nil {
+			unpublished = append(unpublished, idsFrom(batch[i:])...)
 			break
 		}
 		err := r.queue.Publish(ctx, ev.Topic, ev)
@@ -195,13 +213,17 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 		if firstErr == nil {
 			firstErr = err
 		}
-		r.handlePublishFailure(ctx, ev, err)
-
-		// A publish failure is almost always the queue being unavailable, not
-		// this particular row being bad. Abandoning the rest of the batch
-		// avoids hammering a dead queue once per row; the unpublished rows stay
-		// pending and are reclaimed next iteration.
+		failedAt = i
+		// Abandoning the rest of the batch avoids hammering a dead queue once
+		// per row. Those rows are handed back below.
+		unpublished = append(unpublished, idsFrom(batch[i+1:])...)
 		break
+	}
+
+	if failedAt >= 0 {
+		r.handlePublishFailure(ctx, batch[failedAt], firstErr, unpublished)
+	} else if len(unpublished) > 0 {
+		r.release(ctx, unpublished)
 	}
 
 	if len(dispatched) > 0 {
@@ -223,20 +245,68 @@ func (r *Relay) Once(ctx context.Context) (int, error) {
 	return len(dispatched), nil
 }
 
-// handlePublishFailure records the attempt and parks the row once it has failed
-// too often to be worth retrying.
-func (r *Relay) handlePublishFailure(ctx context.Context, ev domain.OutboxEvent, cause error) {
+// idsFrom projects a batch onto its row ids.
+func idsFrom(batch []domain.OutboxEvent) []int64 {
+	out := make([]int64, 0, len(batch))
+	for _, ev := range batch {
+		out = append(out, ev.ID)
+	}
+	return out
+}
+
+// release hands leased rows back without charging them.
+func (r *Relay) release(ctx context.Context, ids []int64) {
+	if len(ids) == 0 {
+		return
+	}
+	// Released with a context that survives the caller's cancellation. A
+	// shutdown that left rows leased would stall the next process for the
+	// length of the lease, which is the worst moment to add latency.
+	rel, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if err := r.store.ReleaseOutboxClaim(rel, ids); err != nil {
+		// Not fatal: the lease expires on its own. Logged because a persistent
+		// failure here shows up as unexplained dispatch latency.
+		r.log.Warn("could not release an outbox claim; the lease will expire instead",
+			"rows", len(ids), "error", err)
+	}
+}
+
+// handlePublishFailure decides whether the failure was the row's fault.
+//
+// This is the distinction that matters. A broker outage makes every publish
+// fail for reasons that have nothing to do with any particular row, so charging
+// a retry budget for it destroys work that was never poison — and because the
+// budget is small and an outage is long, it destroys all of it. The queue is
+// therefore probed: if it answers, this row failed on its own merits and the
+// attempt is charged; if it does not, every row in the batch is handed back
+// untouched and the relay's jittered backoff rides the outage out.
+func (r *Relay) handlePublishFailure(ctx context.Context, ev domain.OutboxEvent, cause error, tail []int64) {
+	probe, cancel := context.WithTimeout(context.WithoutCancel(ctx), probeTimeout)
+	defer cancel()
+	if err := r.queue.Ping(probe); err != nil {
+		// Transport failure. Nothing here is attributable to a row.
+		r.count("outbox.transport_failure")
+		r.release(ctx, append([]int64{ev.ID}, tail...))
+		return
+	}
+
+	// The queue is reachable and this row still would not publish, so the row
+	// is the problem. The rest of the batch is still innocent.
+	r.release(ctx, tail)
+
 	attempts := ev.Attempts + 1
 	if attempts < r.cfg.MaxPublishAttempts {
-		if err := r.store.MarkOutboxFailed(ctx, ev.ID, cause.Error()); err != nil {
+		if err := r.store.RecordOutboxFailure(ctx, ev.ID, cause.Error()); err != nil {
 			r.log.Error("could not record an outbox publish failure",
 				"outbox_id", ev.ID, "incident_id", ev.IncidentID, "error", err)
 		}
 		return
 	}
 
-	// Exhausted. Park it and make the decision visible: a row that stops being
-	// retried without a trace is an event silently dropped.
+	// Exhausted, and exhausted against a reachable queue every time. Park it and
+	// make the decision visible: a row that stops being retried without a trace
+	// is an event silently dropped.
 	r.count("outbox.poisoned")
 	r.log.Error("outbox row exhausted its publish attempts and was parked",
 		"outbox_id", ev.ID, "incident_id", ev.IncidentID,

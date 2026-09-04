@@ -31,6 +31,11 @@ type fakeStore struct {
 	failed     map[int64]string
 	attempts   map[int64]int
 
+	// chargedFailures and releasedClaims record which path the relay took, so a
+	// test can assert that a transport failure did not spend a row's budget.
+	chargedFailures []int64
+	releasedClaims  []int64
+
 	claimErr    error
 	markErr     error
 	claimCalls  int
@@ -91,6 +96,28 @@ func (s *fakeStore) MarkOutboxDispatched(_ context.Context, ids []int64) error {
 			}
 		}
 	}
+	return nil
+}
+
+// The outbox contract distinguishes a row that failed on its own merits from
+// one caught by an unreachable queue. A fake that collapsed the two would let
+// these tests pass against semantics the real store does not have — which is
+// how the collapsed version survived review in the first place.
+func (s *fakeStore) RecordOutboxFailure(ctx context.Context, id int64, cause string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.markErr != nil {
+		return s.markErr
+	}
+	s.attempts[id]++
+	s.chargedFailures = append(s.chargedFailures, id)
+	return nil
+}
+
+func (s *fakeStore) ReleaseOutboxClaim(ctx context.Context, ids []int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.releasedClaims = append(s.releasedClaims, ids...)
 	return nil
 }
 

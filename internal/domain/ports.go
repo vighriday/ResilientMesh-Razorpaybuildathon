@@ -65,7 +65,16 @@ type Store interface {
 	// multiple relays can run concurrently without double dispatch.
 	ClaimOutboxBatch(ctx context.Context, limit int) ([]OutboxEvent, error)
 	MarkOutboxDispatched(ctx context.Context, ids []int64) error
+	// MarkOutboxFailed parks a row permanently. It is the terminal verdict and
+	// must not be used for an ordinary publish failure.
 	MarkOutboxFailed(ctx context.Context, id int64, cause string) error
+	// RecordOutboxFailure charges one attempt and leaves the row PENDING, so a
+	// failure attributable to the row counts towards its budget without
+	// deciding the row's fate on the first try.
+	RecordOutboxFailure(ctx context.Context, id int64, cause string) error
+	// ReleaseOutboxClaim hands leased rows back uncharged, for when the queue
+	// itself was unreachable and the failure says nothing about the rows.
+	ReleaseOutboxClaim(ctx context.Context, ids []int64) error
 	OutboxDepth(ctx context.Context) (pending int, failed int, err error)
 
 	GetMandate(ctx context.Context, subscriptionID string) (MandateRecord, error)
