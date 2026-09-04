@@ -28,6 +28,52 @@ It is demonstrated on the hardest case in the track: recovering failed payments 
 One command. No Docker, no database install, no API key, no account, no spend, no network.
 
 ```bash
+go run ./cmd/meshdemo
+```
+
+**That is the whole evaluation.** In about 60 seconds it boots the entire
+system on embedded infrastructure, drives a scripted bank outage and a batch of
+recurring-mandate failures through it, and narrates what happens — every number
+read back out of the running system's own database, not printed from a script.
+It ends by attacking its own audit ledger and proving the tamper is caught at
+the exact row, then writes a transcript to `artifacts/DEMO_REPORT.md`.
+
+Add `-full` for the exhaustive model check and the four-policy benchmark, or
+`-keep` to leave it running so you can open the console.
+
+<details>
+<summary>What a run looks like</summary>
+
+```
+  3. The decisions it refuses to make
+
+  ✓ 6 distinct invariants have refused something
+
+     INVARIANT             TIMES FIRED  WHAT IT PREVENTS
+     TERMINAL_DECLINE      3            a decline no retry can fix, so no fee is spent
+     AMOUNT_PINNED         1            the amount can only come from the signed payload
+     RBI_AFA_CEILING       1            above the ceiling a debit needs authentication
+     RBI_MANDATE_COOLING   1            RBI's 24-hour gap between recurring debits
+     RBI_PRE_DEBIT_NOTICE  1            the payer must be warned before a debit
+
+  4. Payments recovering
+
+  ✓ 13 recovered, 2 scheduled, 1 abstained
+  Recovered  ₹2,73,405.00 of merchant revenue
+  Cost       ₹35.00 in gateway fees to do it
+
+  5. The audit ledger, and an attack on it
+
+  ✓ Chain intact: 163 entries verified, head 625b346de6fa0dbc…
+  · Editing entry 81 directly in PostgreSQL, as an attacker would
+  ✓ Detected at entry 81 — the exact row that was edited
+```
+
+</details>
+
+If you would rather drive it yourself:
+
+```bash
 go run ./cmd/mesh
 ```
 

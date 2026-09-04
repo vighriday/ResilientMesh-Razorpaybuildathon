@@ -30,7 +30,28 @@ go mod download
 
 ## 1. The 60-second version
 
-One command proves the whole claim:
+One command. It narrates itself, so there is nothing to read alongside it:
+
+```bash
+go run ./cmd/meshdemo
+```
+
+It boots the whole system, drives a bank outage and a batch of recurring
+mandates through it, shows one incident's complete decision trail, lists the
+invariants that refused things and why, reports what was recovered and what it
+cost, then edits a row of its own audit ledger and proves the tamper is caught
+at exactly that row. A transcript lands in `artifacts/DEMO_REPORT.md`.
+
+```
+go run ./cmd/meshdemo -full     # adds the model check and the benchmark
+go run ./cmd/meshdemo -keep     # stays up afterwards so you can open the console
+go run ./cmd/meshdemo -h        # every flag
+```
+
+Every number it prints is read out of the running system's database. If a claim
+in this repository is false, this command prints the false version.
+
+### The same thing as a pass/fail gate
 
 ```bash
 go run ./cmd/meshctl selftest
