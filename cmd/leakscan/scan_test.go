@@ -274,6 +274,33 @@ func TestCleanRepositoryProducesNoFindings(t *testing.T) {
 	}
 }
 
+// This check exists because a shell heredoc silently wrote a backspace byte
+// into a document during the build, and the rendered terminal output looked
+// correct while the file was not.
+func TestControlCharactersAreRejected(t *testing.T) {
+	backspace := "path is C:" + string(rune(92)) + "MinGW" + string(rune(8)) + "in" + string(rune(92)) + "gcc.exe\n"
+	f := scan(t, map[string]string{"docs/NOTES.md": backspace})
+	mustFind(t, f, "control-character", "docs/NOTES.md")
+
+	for _, b := range []rune{0x01, 0x07, 0x0b, 0x0c, 0x1b, 0x7f} {
+		f := scan(t, map[string]string{"internal/a.go": "package a // " + string(b) + "\n"})
+		mustFind(t, f, "control-character", "internal/a.go")
+	}
+}
+
+func TestTabsCarriageReturnsAndUnicodeAreAllowed(t *testing.T) {
+	f := scan(t, map[string]string{
+		"internal/a.go": "package a\n\tconst x = 1\r\n",
+		"docs/b.md":     "Rupees are written \u20b9 and em dashes \u2014 survive.\n",
+	})
+	mustNotFind(t, f, "control-character")
+}
+
+func TestControlCharacterCheckIgnoresNonTextPaths(t *testing.T) {
+	f := scan(t, map[string]string{"web/logo.png": "binary" + string(rune(1)) + "ish"})
+	mustNotFind(t, f, "control-character")
+}
+
 func TestBinaryDetection(t *testing.T) {
 	if !isBinary([]byte{0x00, 0x01, 0x02}) {
 		t.Fatal("expected NUL-containing content to be treated as binary")

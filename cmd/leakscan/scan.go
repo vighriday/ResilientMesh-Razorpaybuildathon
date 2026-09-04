@@ -69,6 +69,7 @@ func (s *Scanner) Scan() []Finding {
 	out = append(out, s.checkEnvExample()...)
 	out = append(out, s.checkWebSinks()...)
 	out = append(out, s.checkDependencies()...)
+	out = append(out, s.checkControlCharacters()...)
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Check != out[j].Check {
 			return out[i].Check < out[j].Check
@@ -298,6 +299,63 @@ func (s *Scanner) checkWebSinks() []Finding {
 		}
 	}
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// 7. Control characters in text files
+// ---------------------------------------------------------------------------
+
+// checkControlCharacters rejects control bytes in tracked text files.
+//
+// A stray control byte is not cosmetic. A backspace or escape sequence changes
+// what a reviewer sees in a terminal versus what the file actually contains,
+// which makes a diff untrustworthy at exactly the moment it matters most. This
+// check exists because a shell heredoc silently wrote a backspace into a
+// document during this build, and nothing else would have caught it.
+func (s *Scanner) checkControlCharacters() []Finding {
+	var out []Finding
+	for _, f := range s.paths() {
+		body := s.Files[f]
+		if len(body) == 0 || !isTextPath(f) {
+			continue
+		}
+		line := 1
+		for _, b := range body {
+			if b == '\n' {
+				line++
+				continue
+			}
+			// Tab, LF and CR are the only control bytes a text file needs.
+			if b == '\t' || b == '\r' {
+				continue
+			}
+			if b < 0x20 || b == 0x7f {
+				out = append(out, Finding{"control-character", f, line,
+					fmt.Sprintf("control byte %#02x in a text file", b)})
+				break
+			}
+		}
+	}
+	return out
+}
+
+var textExtensions = map[string]bool{
+	".go": true, ".md": true, ".py": true, ".js": true, ".css": true,
+	".html": true, ".htm": true, ".yml": true, ".yaml": true, ".json": true,
+	".sh": true, ".ps1": true, ".sql": true, ".txt": true, ".example": true,
+	".mod": true, ".sum": true, ".gitignore": true,
+}
+
+func isTextPath(p string) bool {
+	if textExtensions[path.Ext(p)] {
+		return true
+	}
+	// Extensionless dotfiles and Dockerfiles are text too.
+	switch path.Base(p) {
+	case "Dockerfile", ".gitignore", ".env.example", "go.mod", "go.sum":
+		return true
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
