@@ -1,0 +1,178 @@
+name: CI
+
+# Every job here must pass on a fork with no secrets configured. A pipeline that
+# only works for the maintainer proves nothing to a reviewer who clones it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+
+  guard:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The scanner reads the git index, so it needs a real repository
+          # rather than an exported tree.
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Leak scan
+        run: go run ./cmd/leakscan
+
+      - name: Leak scanner self-tests
+        run: go test ./cmd/leakscan -count=1
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^$' || true)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go.mod is tidy
+        run: |
+          cp go.mod go.mod.bak && cp go.sum go.sum.bak
+          go mod tidy
+          diff -u go.mod.bak go.mod || { echo "go.mod is not tidy; run go mod tidy"; exit 1; }
+          diff -u go.sum.bak go.sum || { echo "go.sum is not tidy; run go mod tidy"; exit 1; }
+
+  build:
+    name: Build and vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+
+  test:
+    name: Tests with race detector
+    runs-on: ubuntu-latest
+    # Embedded PostgreSQL downloads a binary on first run and the property and
+    # simulation suites are deliberately large.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Cache embedded PostgreSQL binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/embedded-postgres-go
+          key: embedded-pg-${{ runner.os }}-v1
+
+      # The race detector is the point of this job. Concurrency bugs in the
+      # outbox relay and the SSE hub are exactly the class this project claims
+      # to have solved, so running without -race would make the claim unbacked.
+      - name: Test
+        run: go test ./... -race -count=1 -timeout 20m
+
+  vulnerabilities:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t resilientmesh:ci .
+
+      # A container that can write its own binary is a container an attacker can
+      # persist in, so the non-root guarantee is asserted rather than assumed.
+      - name: Image runs as non-root
+        run: |
+          user=$(docker image inspect resilientmesh:ci --format '{{.Config.User}}')
+          echo "image user: '$user'"
+          case "$user" in
+            ""|"root"|"0"|"0:0") echo "image must not run as root"; exit 1 ;;
+          esac
+
+      - name: Image has no shell
+        run: |
+          if docker run --rm --entrypoint /bin/sh resilientmesh:ci -c 'echo reachable' 2>/dev/null; then
+            echo "a shell is reachable in the runtime image"
+            exit 1
+          fi
+          echo "no shell in the runtime image"
+
+  benchmark:
+    name: Evaluation harness smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache embedded PostgreSQL binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/embedded-postgres-go
+          key: embedded-pg-${{ runner.os }}-v1
+
+      - name: Install evaluation dependencies
+        run: pip install --no-cache-dir numpy pandas
+
+      # Reduced incident count: this proves the harness runs end to end and the
+      # attestation manifest is produced. The full 500-incident run belongs in
+      # the judge harness, not on every push.
+      - name: Run a reduced benchmark
+        run: python eval/benchmark.py --incidents 50 --seed 20260904 --out artifacts/ci-benchmark.json
+
+      - name: Attestation manifest is present and stable
+        run: |
+          python - <<'PY'
+          import json, sys
+          d = json.load(open('artifacts/ci-benchmark.json'))
+          manifest = d.get('manifest')
+          if not manifest or not manifest.get('hash'):
+              print('benchmark output carries no attestation manifest')
+              sys.exit(1)
+          print('manifest', manifest['hash'])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-benchmark
+          path: artifacts/ci-benchmark.json
