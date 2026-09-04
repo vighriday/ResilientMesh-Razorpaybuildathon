@@ -389,6 +389,12 @@ func (a *App) Metrics() *obs.Registry { return a.metr }
 // managed runtime overwrote.
 func (a *App) Config() config.Config { return a.cfg }
 
+// Store exposes the durable store for tooling that has to query what the system
+// actually recorded — the end-to-end self-test reads its results from here
+// rather than from in-process counters, so the numbers it reports are the ones
+// a reviewer would find by querying the database themselves.
+func (a *App) Store() *store.Postgres { return a.pg }
+
 // Run starts every enabled role and returns when all of them have stopped.
 //
 // The first error wins and cancels the rest: a worker pool that keeps running

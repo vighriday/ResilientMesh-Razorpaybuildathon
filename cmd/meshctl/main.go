@@ -44,6 +44,9 @@ const (
 
 const usage = `meshctl — ResilientMesh operator CLI
 
+  meshctl selftest [--json]               boot the whole system, recover real
+                                          payments, then tamper with the audit
+                                          ledger and prove detection
   meshctl status                          one-screen operational summary
   meshctl audit verify                    recompute the whole hash chain
   meshctl audit head                      the current chain head
@@ -103,6 +106,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "meshctl: %v\n", err)
 		return exitUsage
 	}
+	// selftest is the one command that builds its own stack rather than
+	// attaching to a running one, so it is dispatched before the connection is
+	// established and before the managed-mode guard below.
+	if rest[0] == "selftest" {
+		if err := cmdSelftest(ctx, g, stdout); err != nil {
+			fmt.Fprintf(stderr, "meshctl: %v\n", err)
+			return exitFailure
+		}
+		return exitOK
+	}
+
 	if cfg.InfraMode == config.InfraManaged {
 		// meshctl attaches to a running mesh; it must never boot its own
 		// database. Doing so would silently create a second, empty cluster and
