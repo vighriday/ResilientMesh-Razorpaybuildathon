@@ -16,11 +16,20 @@ never name an amount, and never move a rupee.
 [![Invariants](https://img.shields.io/badge/invariants-14%20deterministic-2b5cff)](#the-fourteen-invariants)
 [![Direct dependencies](https://img.shields.io/badge/direct%20dependencies-6-7a8399)](#dependencies)
 
-**[Evidence page: verify the ledger in your own browser](https://huggingface.co/spaces/hriday29/resilientmesh)**
-·
+[![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-lg.svg)](https://huggingface.co/spaces/hriday29/resilientmesh)
+
+### Two ways to evaluate this
+
+| | | |
+|---|---|---|
+| **No install** | **[huggingface.co/spaces/hriday29/resilientmesh](https://huggingface.co/spaces/hriday29/resilientmesh)** | One real run, published. Re-derives all 538 audit digests in **your browser**, then lets you plant a forgery and watch it name the row you touched. About 80 ms. |
+| **The real thing** | `go run ./cmd/meshdemo` | The whole system on your machine. Two minutes. No Docker, no account, no key. |
+
 [Evaluation guide](docs/EVALUATING.md)
 ·
 [Post-mortem](docs/POSTMORTEM.md)
+·
+[Live evidence page](https://huggingface.co/spaces/hriday29/resilientmesh)
 
 </div>
 
@@ -468,6 +477,12 @@ eval/          the four-policy benchmark
 ---
 
 <div align="center">
+
+### [Open the evidence page](https://huggingface.co/spaces/hriday29/resilientmesh)
+
+Verify a real run's audit ledger in your own browser. Nothing to install, nothing to trust.
+
+<br>
 
 ### Anyone can make an agent act.
 
