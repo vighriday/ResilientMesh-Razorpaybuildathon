@@ -82,6 +82,11 @@ minutes and writes a transcript to `artifacts/DEMO_REPORT.md`.
 
 </details>
 
+<div align="center">
+<img src="docs/img/space-run.png" alt="The narrated run, replayed" width="880">
+<br><em>The same transcript, replayable act by act on the <a href="https://huggingface.co/spaces/hriday29/resilientmesh">evidence page</a>.</em>
+</div>
+
 ---
 
 ## What is real, and what is simulated
