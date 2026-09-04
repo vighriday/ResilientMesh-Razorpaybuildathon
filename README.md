@@ -10,7 +10,7 @@ Razorpay Buildathon — **Track 03, AI Revenue Recovery**
 | **College** | Maharaja Surajmal Institute of Technology |
 | **Graduating** | 2028 |
 | **Track** | Track 03 — AI Revenue Recovery |
-| **Repository** | `https://github.com/<your-handle>/razorpay-resilient-mesh` *(public)* |
+| **Repository** | <https://github.com/vighriday/ResilientMesh-Razorpay-buildathon> |
 | **Pitch video** | *(5 min, unlisted — link added at submission)* |
 
 ---
@@ -62,10 +62,16 @@ First run downloads a PostgreSQL binary once (~60 MB) and caches it under your u
 ### Verify it the way a reviewer would
 
 ```bash
-./scripts/judge.sh          # or: powershell -File scripts/judge.ps1
-go run ./cmd/modelcheck     # exhaustive proof over the decision state space
-go run ./cmd/leakscan       # secret / private-material scanner over tracked files
+go run ./cmd/meshctl selftest   # boots everything, recovers real payments,
+                                # then tampers with the audit ledger and
+                                # proves the tamper is detected
+./scripts/judge.sh              # every gate; or: powershell -File scripts/judge.ps1
+go run ./cmd/modelcheck         # exhaustive proof over the decision state space
+go run ./cmd/leakscan           # secret / private-material scanner
 ```
+
+**Step-by-step for a reviewer with no context:
+[`docs/EVALUATING.md`](docs/EVALUATING.md).**
 
 ---
 
@@ -233,7 +239,20 @@ Every unit test passed. Booting the whole system revealed **every incident absta
 **6. An IDOR in the source design's own event stream.**
 The plan called for `/stream/{order_id}`. Order ids are guessable and routinely shared, so that streams a stranger's recovery progress to anyone who can iterate. Changed to an opaque session id plus a single-purpose bearer token, stored only as a hash, compared in constant time — recorded as ADR-011.
 
-**7. The race detector did not work, and the honest fix was to say so.**
+**7. A retried write that double-counted real money, and an outage that destroyed events.**
+Deterministic simulation with fault injection found both. The attempt-commit path
+is retried on purpose — losing the record of a debit is worse than the debit —
+but it was not idempotent, so a failure *after* the insert re-ran it and recorded
+the same attempt twice, double-counting a gateway fee and inflating every
+recovery-rate measurement. Separately, the outbox relay called `MarkOutboxFailed`
+on every publish failure, which sets state to `FAILED`; since claims only select
+`PENDING` rows, the *first* failure parked a row permanently and the eight-attempt
+budget was unreachable. The relay's own comment said a publish failure is "almost
+always the queue being unavailable, not this particular row being bad" — and the
+code did the opposite. Both fixed; the full account, including **one finding still
+open and unfixed**, is in [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md).
+
+**8. The race detector did not work, and the honest fix was to say so.**
 `gcc` on `PATH` was 32-bit MinGW. `scripts/judge.ps1` now resolves a working 64-bit toolchain and **reports plainly when none exists** rather than quietly running without `-race`. A green suite that silently skipped the race detector is worse than a red one.
 
 ---
@@ -286,4 +305,6 @@ Test fixtures that need credential shapes **compose them at run time** via `inte
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — operator procedures
 - [`docs/SLO.md`](docs/SLO.md) — objectives and error budgets
 - [`docs/DATA.md`](docs/DATA.md) — what is stored, what never is
+- [`docs/EVALUATING.md`](docs/EVALUATING.md) — how to run and verify everything, from scratch
+- [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md) — every defect found during this build, including one still open
 - [`decisions.md`](decisions.md) — ADRs, including the ones that changed the design
