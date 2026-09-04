@@ -1,4 +1,4 @@
-package main
+package simulator
 
 import (
 	"net/http"
