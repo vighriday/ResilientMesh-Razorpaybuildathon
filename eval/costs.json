@@ -1,0 +1,8 @@
+{
+  "_comment": "Single source of truth for ResilientMesh economics. Go reads this file via internal/config.LoadCostModel; Python reads it in eval/benchmark.py. Both MUST read it so the live policy engine and the offline NRCV benchmark can never price the same incident differently. Values mirror domain.DefaultCostModel().",
+  "_units": "paisa (1 rupee = 100 paisa); integer arithmetic only, never floats in money math",
+  "gateway_fee_per_attempt_paisa": 250,
+  "comms_cost_per_message_paisa": 60,
+  "compliance_penalty_paisa": 50000,
+  "session_friction_paisa": 60
+}
