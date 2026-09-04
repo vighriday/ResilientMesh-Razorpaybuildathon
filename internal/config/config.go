@@ -206,7 +206,11 @@ type Config struct {
 	RazorpayKeySecret string
 
 	DemoMode bool
-	Seed     int64
+	// DemoTimeScale compresses the wait before a scheduled retry so a
+	// demonstration reaches an outcome. It never changes a decision; see
+	// worker.Config.DemoTimeScale. One means no compression.
+	DemoTimeScale float64
+	Seed          int64
 }
 
 // Default returns the configuration the system runs with when the environment
@@ -215,7 +219,11 @@ type Config struct {
 // defined in exactly one place.
 func Default() Config {
 	return Config{
-		HTTPAddr:          ":8080",
+		// Loopback by default. Binding every interface would expose an
+		// operator console and a webhook endpoint to the local network on a
+		// laptop, and would make a firewall prompt part of the first-run
+		// experience. A deployment that wants a public bind sets MESH_HTTP_ADDR.
+		HTTPAddr:          "127.0.0.1:8080",
 		RedisAddr:         "127.0.0.1:6379",
 		WebhookMaxSkew:    5 * time.Minute,
 		InfraMode:         InfraManaged,
@@ -235,6 +243,7 @@ func Default() Config {
 		CostModelPath:     filepath.Join("eval", "costs.json"),
 		SimulatorAddr:     "127.0.0.1:8081",
 		Seed:              42,
+		DemoTimeScale:     1,
 	}
 }
 

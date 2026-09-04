@@ -57,7 +57,7 @@ func TestLoadFromEmptyEnvironmentYieldsDocumentedDefaults(t *testing.T) {
 		t.Fatalf("LoadFrom with an empty environment: %v", err)
 	}
 
-	if c.HTTPAddr != ":8080" {
+	if c.HTTPAddr != "127.0.0.1:8080" {
 		t.Errorf("HTTPAddr = %q, want :8080", c.HTTPAddr)
 	}
 	if c.RedisAddr != "127.0.0.1:6379" {
@@ -351,7 +351,7 @@ func TestEmptyVariableFallsBackToDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
-	if c.HTTPAddr != ":8080" {
+	if c.HTTPAddr != "127.0.0.1:8080" {
 		t.Errorf("a blank override should fall back to the default, got %q", c.HTTPAddr)
 	}
 }
