@@ -644,6 +644,23 @@ const DEFECTS = [
       + 'repair the row: a system with a repair path for its own audit trail does not have one. '
       + 'The demonstration now owns a database it empties every run, which also makes "the run '
       + 'is a pure function of its seed" true on the second run rather than only the first.' },
+  { via: 'RUNNING THE HARNESS TWICE', title: 'A flaky verification gate, which is worse than a failing one',
+    body: 'The race-detector gate failed once and passed on a re-run. That is the worst result a '
+      + 'gate can give: a reviewer who hits it concludes the project is broken, and one who does '
+      + 'not never learns there was anything wrong. The cause was a genuine unsynchronised read '
+      + 'in a test helper, which appends each webhook delivery under a mutex and then let the '
+      + 'assertions read the slice with no lock. It passed in isolation eight times running, '
+      + 'because the deliveries are logically complete by then, but the handler goroutine that '
+      + 'appended the last one has not necessarily returned. A test helper is production code for '
+      + 'the purposes of concurrency.' },
+  { via: 'RECORDED VECTORS', title: 'A vector that made the gate look like it permitted a stolen card',
+    body: 'One conformance vector used error_code "card_stolen", which is not in the taxonomy, so '
+      + 'it fell through to a generic retry and read as the gate permitting a retry on a stolen '
+      + 'card. The real code is card_lost_or_stolen. An unrecognised code is deliberately not '
+      + 'treated as terminal, because inventing terminality for unknown strings is how a recovery '
+      + 'system silently stops recovering, so the gate was right and the fixture was wrong. It was '
+      + 'legible only because the expected answers are recorded from a real run rather than '
+      + 'asserted by hand.' },
   { via: 'OPEN, NOT FIXED', open: true, title: 'The reconciler amplifies during an outage',
     body: 'A parked outbox row is not PENDING, so the reconciler treats its incident as stalled '
       + 'and inserts a replacement, which parks too. 20,434 rows from 400 incidents, all of it '

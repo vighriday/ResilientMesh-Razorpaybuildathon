@@ -159,6 +159,32 @@ func (c *capture) count() int {
 	return len(c.bodies)
 }
 
+// body and header read one delivery under the same lock the handler writes it
+// under.
+//
+// Reading c.bodies[i] directly from a test is a data race even when the
+// deliveries are logically complete: the handler goroutine that appended the
+// last one may not have returned, and the race detector is right to say so.
+// It surfaced as an occasional failure of the whole suite under load and as a
+// pass in isolation, which is the shape of every unsynchronised read.
+func (c *capture) body(i int) []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if i < 0 || i >= len(c.bodies) {
+		return nil
+	}
+	return c.bodies[i]
+}
+
+func (c *capture) header(i int) http.Header {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if i < 0 || i >= len(c.headers) {
+		return http.Header{}
+	}
+	return c.headers[i]
+}
+
 func newTestEmitter(t *testing.T, target, secret string, after func(time.Duration) <-chan time.Time) *emitter {
 	t.Helper()
 	em, err := newEmitter(emitterConfig{
@@ -210,7 +236,7 @@ func TestEmitSignsTheExactBytesOnTheWire(t *testing.T) {
 		t.Fatalf("expected exactly one delivery, got %d", cap.count())
 	}
 
-	body, header := cap.bodies[0], cap.headers[0]
+	body, header := cap.body(0), cap.header(0)
 	if got := SignPayload(secret, body); got != header.Get("X-Razorpay-Signature") {
 		t.Fatalf("signature over the received body is %s, header carried %s",
 			got, header.Get("X-Razorpay-Signature"))
@@ -259,13 +285,13 @@ func TestDuplicateDeliveryIsByteIdentical(t *testing.T) {
 	if cap.count() != 2 {
 		t.Fatalf("a duplicated event produced %d deliveries, want 2", cap.count())
 	}
-	if string(cap.bodies[0]) != string(cap.bodies[1]) {
+	if string(cap.body(0)) != string(cap.body(1)) {
 		t.Fatal("the duplicate carried a different body")
 	}
-	if cap.headers[0].Get("X-Razorpay-Event-Id") != cap.headers[1].Get("X-Razorpay-Event-Id") {
+	if cap.header(0).Get("X-Razorpay-Event-Id") != cap.header(1).Get("X-Razorpay-Event-Id") {
 		t.Fatal("the duplicate carried a different event id")
 	}
-	if cap.headers[0].Get("X-Razorpay-Signature") != cap.headers[1].Get("X-Razorpay-Signature") {
+	if cap.header(0).Get("X-Razorpay-Signature") != cap.header(1).Get("X-Razorpay-Signature") {
 		t.Fatal("the duplicate carried a different signature")
 	}
 }
@@ -312,7 +338,7 @@ func TestEmitRetriesTransientRejections(t *testing.T) {
 			t.Fatalf("backoff %d is %s, outside [0, %s]", i, d, ceiling)
 		}
 	}
-	if string(cap.bodies[0]) != string(cap.bodies[2]) {
+	if string(cap.body(0)) != string(cap.body(2)) {
 		t.Fatal("a retry re-marshalled the payload instead of resending the signed bytes")
 	}
 }

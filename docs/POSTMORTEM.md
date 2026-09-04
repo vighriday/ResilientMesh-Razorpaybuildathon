@@ -282,7 +282,35 @@ side was wrong.
 
 ---
 
-## 10. OPEN, the reconciler amplifies during an outage
+## 10. A flaky verification gate, which is worse than a failing one
+
+**Found by:** running scripts/judge.sh twice.
+
+The race-detector gate failed once and passed on a re-run. That is the worst
+result a gate can give: a reviewer who hits it concludes the project is broken,
+and a reviewer who does not never learns there is anything wrong. "Flaky, just
+run it again" is not an answer when the whole submission argues that verification
+should be trustworthy.
+
+The cause was a genuine unsynchronised read in the simulator's test helper. The
+webhook capture appends each delivery under a mutex, and the assertions then read
+`cap.bodies[0]` and `cap.headers[1]` straight off the struct with no lock. The
+deliveries are logically complete by then, which is why it passed in isolation
+eight times running, but the handler goroutine that appended the last one has not
+necessarily returned, so the read really is concurrent with a write and the race
+detector was right.
+
+**Fixed by** locked `body(i)` and `header(i)` accessors, with every direct index
+in the package routed through them.
+
+**Lesson.** A test helper is production code for the purposes of concurrency. The
+failure mode here was entirely characteristic: passes alone, fails under load,
+tempting to re-run. Chasing it was worth more than the defect itself, because an
+intermittent gate quietly destroys the credibility of every gate beside it.
+
+---
+
+## 11. OPEN, the reconciler amplifies during an outage
 
 **Status: unfixed. Reproducible. Left failing on purpose.**
 
@@ -337,7 +365,7 @@ worth more than a clean report would have been.
 
 ## What this list is
 
-Nine fixed, one open, and none of them found by reading the code.
+Ten fixed, one open, and none of them found by reading the code.
 
 The techniques that found them, in order of how much they were worth:
 
@@ -349,6 +377,7 @@ The techniques that found them, in order of how much they were worth:
 | Writing adversarial tests for a frozen contract | #2 and #3, hostile values the definition never considered |
 | Running the same command twice | #8 |
 | Recording expected answers instead of asserting them | #9 |
+| Running the verification harness twice | #10 |
 
 The pattern across all of them is that the defect lived in the space between two
 individually correct things: a relay that gives up and a reconciler that revives,
