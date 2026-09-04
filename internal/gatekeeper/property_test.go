@@ -38,17 +38,19 @@ const propertySeed = 0x5EED_1234
 
 var (
 	propertyErrorCodes = []string{
-		// terminal
-		"card_expired", "debit_instrument_blocked", "bank_account_invalid",
-		"transaction_limit_exceeded", "payment_method_not_enabled", "card_not_supported",
+		// terminal: indices 0..8
+		"debit_instrument_blocked", "bank_account_invalid",
+		"transaction_limit_exceeded", "payment_method_not_enabled",
 		"invalid_card_number", "card_lost_or_stolen", "international_transaction_not_allowed",
 		"payment_cancelled_by_user", "mandate_revoked",
-		// ambiguous
+		// ambiguous: indices 9..16
 		"bank_technical_error", "gateway_technical_error", "payment_timed_out",
 		"server_error", "issuer_down", "gateway_error", "upi_psp_error", "payment_pending",
-		// soft
+		// soft: indices 17..23
 		"insufficient_funds", "payment_failed", "invalid_otp", "incorrect_otp",
 		"authentication_failed", "upi_collect_expired", "mandate_not_active",
+		// refreshable: indices 24..25
+		"card_expired", "card_not_supported",
 		// hostile or malformed
 		"", " ", "CARD_EXPIRED", " card_expired ", "unknown_code_42",
 		"'; DROP TABLE incidents;--", "card_expired\x00", "\n\ncard_expired",
@@ -57,6 +59,7 @@ var (
 
 	propertyActions = []domain.Action{
 		domain.ActionRailMorph, domain.ActionAsyncRetry, domain.ActionMandateCascade, domain.ActionAbstain,
+		domain.ActionInstrumentRefresh,
 		domain.Action("in_session_rail_morph"), domain.Action("  ASYNC_EXPONENTIAL_RETRY  "),
 		domain.Action(""), domain.Action("REFUND_TO_ATTACKER"), domain.Action("CAPTURE"),
 		domain.Action("IN_SESSION_RAIL_MORPH; DROP TABLE incidents"),
@@ -75,6 +78,7 @@ var (
 	propertyClasses = []domain.FailureClass{
 		domain.ClassTransientDegradation, domain.ClassIssuerOutage, domain.ClassNetworkTimeout,
 		domain.ClassPSPDegradation, domain.ClassCustomerAction, domain.ClassInsufficientFunds,
+		domain.ClassInstrumentStale,
 		domain.ClassPermanentInstrument, domain.ClassUnknown,
 		domain.FailureClass(""), domain.FailureClass("TOTALLY_MADE_UP"), domain.FailureClass("issuer_outage"),
 	}
@@ -106,7 +110,8 @@ var (
 		RuleAmountPinned: {}, RuleTerminalDecline: {}, RuleStopMaxAttempts: {},
 		RuleLowConfidence: {}, RuleUnrecoverableClass: {}, RuleSessionRequired: {},
 		RuleRailAllowlist: {}, RuleMandateCooling: {}, RulePreDebitNotice: {},
-		RuleMandateHalted: {}, RuleMandateCycleCap: {}, RuleDelayBounds: {},
+		RuleMandateHalted: {}, RuleMandateCycleCap: {}, RuleAFACeiling: {},
+		RuleInstrumentRefresh: {}, RuleDelayBounds: {},
 	}
 )
 
@@ -159,12 +164,12 @@ func randomInput(r *rand.Rand, now time.Time) domain.GateInput {
 	}
 
 	currency := propertyCurrency[pick(len(propertyCurrency))]
-	// Codes 11..24 of the pool are the ambiguous and soft-decline sets: the
+	// Codes 9..25 of the pool are the ambiguous, soft and refreshable sets: the
 	// inputs a real recovery attempt is made of.
 	errorCode := propertyErrorCodes[pick(len(propertyErrorCodes))]
 	if plausible {
 		currency = propertyCurrency[pick(4)]
-		errorCode = propertyErrorCodes[11+pick(15)]
+		errorCode = propertyErrorCodes[9+pick(17)]
 	}
 
 	pay := domain.PaymentEntity{
@@ -242,8 +247,8 @@ func randomInput(r *rand.Rand, now time.Time) domain.GateInput {
 		// no-session downgrade path exercised.
 		sessionActive = r.Intn(4) != 0
 		attempts = r.Intn(4)
-		proposalAction = propertyActions[pick(4)]
-		proposalClass = propertyClasses[pick(6)]
+		proposalAction = propertyActions[pick(5)]
+		proposalClass = propertyClasses[pick(7)]
 		confidence = domain.MinConfidenceToActOn + r.Float64()*(1-domain.MinConfidenceToActOn)
 		proposalIncident = incidentID
 	}
@@ -471,7 +476,10 @@ func TestGatekeeperInvariantsHoldForEveryInput(t *testing.T) {
 	// twelve rules must have been exercised, or the generator has drifted and
 	// the passes above are vacuous.
 	const minOutcomes, minRuleHits = 100, 25
-	for _, want := range []domain.Action{domain.ActionRailMorph, domain.ActionAsyncRetry, domain.ActionMandateCascade, domain.ActionAbstain} {
+	for _, want := range []domain.Action{
+		domain.ActionRailMorph, domain.ActionAsyncRetry, domain.ActionMandateCascade,
+		domain.ActionAbstain, domain.ActionInstrumentRefresh,
+	} {
 		if actions[want] < minOutcomes {
 			t.Fatalf("corpus produced action %s only %d times, want at least %d: %v", want, actions[want], minOutcomes, actions)
 		}

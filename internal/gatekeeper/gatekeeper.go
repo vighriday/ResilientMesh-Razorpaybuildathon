@@ -53,6 +53,12 @@ const (
 	RuleMandateCooling = "RBI_MANDATE_COOLING"
 	// RulePreDebitNotice marks an unmet pre-debit notification obligation.
 	RulePreDebitNotice = "RBI_PRE_DEBIT_NOTICE"
+	// RuleInstrumentRefresh marks a decline re-presented through a refreshed
+	// credential rather than retried unchanged.
+	RuleInstrumentRefresh = "INSTRUMENT_REFRESH_ALLOWED"
+	// RuleAFACeiling marks a recurring debit above the additional-factor
+	// ceiling for its mandate category.
+	RuleAFACeiling = "RBI_AFA_CEILING"
 	// RuleMandateHalted marks a mandate that must not be debited again.
 	RuleMandateHalted = "MANDATE_HALTED"
 	// RuleMandateCycleCap marks the per-cycle attempt cap being hit; its
@@ -211,7 +217,7 @@ func (g *Gatekeeper) Decide(ctx context.Context, in domain.GateInput) (domain.Sa
 	// classification must not be able to buy a retry.
 	class := domain.ParseFailureClass(string(in.Proposal.FailureClassification))
 
-	d := &decision{}
+	d := &decision{presentation: domain.PresentationUnchanged}
 
 	proposalMalformed := !in.Proposal.RecommendedAction.Valid()
 	if proposalMalformed {
@@ -387,6 +393,29 @@ func (g *Gatekeeper) Decide(ctx context.Context, in domain.GateInput) (domain.Sa
 		d.fire(RulePreDebitNotice, "no valid pre-debit notice on record for the current cycle; notice must be delivered before this debit")
 	}
 
+	// ---- 9a. RBI_AFA_CEILING ---------------------------------------------
+	//
+	// A registered mandate may debit without a fresh additional factor only up
+	// to a ceiling: Rs 15,000 in general, Rs 1,00,000 for insurance, mutual
+	// fund and credit card bill mandates. Above it the debit needs
+	// authentication and cannot simply be re-presented, so an automatic retry
+	// there is not a suboptimal choice but a regulatory breach.
+	//
+	// The category is read from the mandate record when one is attached and
+	// defaults to the general ceiling otherwise. Defaulting the strict way
+	// matters: an unknown category must never widen a regulatory limit.
+	if !d.abstained() && recurring {
+		category := domain.CategoryGeneral
+		if in.Mandate != nil && in.Mandate.Category != "" {
+			category = domain.ParseMandateCategory(string(in.Mandate.Category))
+		}
+		if ceiling := category.AFACeilingPaisa(); in.Payment.Amount > ceiling {
+			d.veto(RuleAFACeiling, fmt.Sprintf(
+				"recurring debit of %d paisa exceeds the %s additional-factor ceiling of %d paisa; authentication is required and an automatic retry is not permitted",
+				in.Payment.Amount, category, ceiling))
+		}
+	}
+
 	// ---- 10. MANDATE_HALTED ----------------------------------------------
 	//
 	// Applied whenever a halted mandate is attached, recurring flag or not: a
@@ -404,6 +433,31 @@ func (g *Gatekeeper) Decide(ctx context.Context, in domain.GateInput) (domain.Sa
 			in.Mandate.AttemptsInCycle, orDefault(sanitizeToken(in.Mandate.CycleKey, 32), "unkeyed"), g.cfg.MandateCycleCap))
 	}
 
+	// ---- 11a. INSTRUMENT_REFRESH_ALLOWED ---------------------------------
+	//
+	// A refresh re-presents the same instrument through a different credential
+	// form; it does not move rails. The rail is therefore pinned to the
+	// payment's own method rather than left unset, because an executable
+	// command naming no rail would reach the gateway with nothing to present
+	// on. The presentation is forced to a network token, which is the only
+	// form that recovers a changed card number.
+	//
+	// Amount and currency are untouched here, and a test asserts it: a refresh
+	// that could alter either would reintroduce exactly the hazard the pinned
+	// amount exists to prevent.
+	if d.action == domain.ActionInstrumentRefresh {
+		if rail := domain.RailFromMethod(in.Payment.Method); rail != domain.RailNone {
+			d.rail = rail
+			d.presentation = domain.PresentationNetworkToken
+			d.fire(RuleInstrumentRefresh, fmt.Sprintf(
+				"re-presenting on %s as a network token; amount and mandate terms unchanged", rail))
+		} else {
+			d.veto(RuleInstrumentRefresh, fmt.Sprintf(
+				"cannot refresh an instrument for method %q: no rail to present on",
+				sanitizeToken(in.Payment.Method, maxTokenRunes)))
+		}
+	}
+
 	// ---- 12. DELAY_BOUNDS ------------------------------------------------
 	boundWhy := fmt.Sprintf("delay %ds bounded into [0,%d]", d.delay, domain.MaxRecommendedDelay)
 	if d.delay < 0 {
@@ -417,6 +471,7 @@ func (g *Gatekeeper) Decide(ctx context.Context, in domain.GateInput) (domain.Sa
 		// obligation. Leaving them populated invites an executor bug to act on
 		// a decision that said "do nothing".
 		d.delay, d.rail, d.preDebit = 0, domain.RailNone, false
+		d.presentation = domain.PresentationUnchanged
 		boundWhy = fmt.Sprintf("action %s is not executable: schedule, rail and notice obligation cleared", d.action)
 	}
 	d.fire(RuleDelayBounds, boundWhy)
@@ -429,6 +484,7 @@ func (g *Gatekeeper) Decide(ctx context.Context, in domain.GateInput) (domain.Sa
 		Currency:                   currency,
 		Action:                     d.action,
 		TargetRail:                 d.rail,
+		Presentation:               d.presentation,
 		ExecuteAfter:               now.Add(time.Duration(d.delay) * time.Second),
 		DelaySeconds:               d.delay,
 		AttemptNumber:              attempt,
@@ -476,12 +532,16 @@ type firedRule struct {
 // decision is the mutable working state of one evaluation. It never escapes
 // Decide, which is what keeps the Gatekeeper itself stateless.
 type decision struct {
-	action   domain.Action
-	rail     domain.Rail
-	delay    int64
-	preDebit bool
-	fired    []firedRule
-	notes    []string
+	action domain.Action
+	rail   domain.Rail
+	// presentation is how the instrument will be offered on this attempt. It
+	// defaults to unchanged, so only a rule that deliberately re-presents can
+	// move it.
+	presentation domain.InstrumentPresentation
+	delay        int64
+	preDebit     bool
+	fired        []firedRule
+	notes        []string
 }
 
 func (d *decision) fire(name, why string) {
@@ -514,8 +574,14 @@ func (d *decision) ruleNames() []string {
 // rule helpers
 // ---------------------------------------------------------------------------
 
+// executable delegates to the domain rather than re-listing the actions.
+//
+// A local copy of this predicate silently fell out of date when a new action
+// was added: the gatekeeper set a rail for an instrument refresh and then
+// cleared it again, emitting an executable command naming no rail. Deriving it
+// from the single definition removes the class of bug rather than the instance.
 func executable(a domain.Action) bool {
-	return a == domain.ActionRailMorph || a == domain.ActionAsyncRetry || a == domain.ActionMandateCascade
+	return domain.SanitizedCommand{Action: a}.Executable()
 }
 
 // chargeable rejects money values that cannot correspond to a real Razorpay
