@@ -21,7 +21,7 @@ Nothing else. No `psql`, no `redis-server`, no migration tool: PostgreSQL and a
 Redis-protocol server run **inside the process**.
 
 ```bash
-git clone https://github.com/vighriday/ResilientMesh-Razorpay-buildathon.git
+git clone https://github.com/vighriday/ResilientMesh-Razorpaybuildathon.git
 cd ResilientMesh-Razorpay-buildathon
 go mod download
 ```

@@ -10,7 +10,7 @@ Razorpay Buildathon — **Track 03, AI Revenue Recovery**
 | **College** | Maharaja Surajmal Institute of Technology |
 | **Graduating** | 2028 |
 | **Track** | Track 03 — AI Revenue Recovery |
-| **Repository** | <https://github.com/vighriday/ResilientMesh-Razorpay-buildathon> |
+| **Repository** | <https://github.com/vighriday/ResilientMesh-Razorpaybuildathon> |
 | **Pitch video** | *(5 min, unlisted — link added at submission)* |
 
 ---
