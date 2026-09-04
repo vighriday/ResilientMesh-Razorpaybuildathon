@@ -1,0 +1,30 @@
+{
+  "digest": "7abfdb8bbaf6cb7d95b6bc9316bd2e783a83b6706157e3337b0dad955c8d7844",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "outage at upi:okicici: a medium-severity notice on this issuer alongside a 4% rolling success rate",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.84,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window over a collapsed success rate is an outage in practice, whatever the notice is graded. Attempt 2 failing identically rules out a one-off switch error. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

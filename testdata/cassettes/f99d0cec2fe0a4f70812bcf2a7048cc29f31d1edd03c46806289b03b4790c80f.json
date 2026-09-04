@@ -1,0 +1,30 @@
+{
+  "digest": "f99d0cec2fe0a4f70812bcf2a7048cc29f31d1edd03c46806289b03b4790c80f",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:okicici at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.78,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and no Razorpay downtime notice covers it. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

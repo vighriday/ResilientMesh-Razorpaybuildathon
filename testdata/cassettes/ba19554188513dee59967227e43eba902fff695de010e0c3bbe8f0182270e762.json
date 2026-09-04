@@ -1,0 +1,30 @@
+{
+  "digest": "ba19554188513dee59967227e43eba902fff695de010e0c3bbe8f0182270e762",
+  "context": {
+    "error_code": "payment_pending",
+    "method": "upi",
+    "issuer_key": "upi:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "collect request to upi:paytm left unapproved by the payer; the rail is healthy at 92%",
+    "failure_classification": "CUSTOMER_ACTION_REQUIRED",
+    "confidence_score": 0.68,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:paytm is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and no Razorpay downtime notice covers it. Pending is not a decline: the request reached the payer and was not approved, so the blocker is a person rather than a system. The payer has now declined to act 2 times, so abandonment is the likelier reading. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "a9038edc61c1680d8454d3a49840fca9d747024985a96ee41992410bc51ad08f",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at upi:okhdfcbank; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.92,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The published notice and the measured rate agree, so this is issuer-side and nothing about this payment would have changed the outcome. Attempt 2 failing identically rules out a one-off switch error. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "007c1521834fe3e722a47101904aaf963653eace9c6853406ce1ee5babcae236",
+  "context": {
+    "error_code": "payment_pending",
+    "method": "upi",
+    "issuer_key": "upi:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "undeclared outage at upi:paytm: 4% success over 214 attempts with nothing published yet",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.76,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:paytm is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names upi:ybl, a different issuer on the same method. Nothing is published for this issuer, but a rate this low over this many attempts is not sampling noise; the notice is lagging the failure. The open notice on upi:ybl is a different issuer and explains nothing here. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

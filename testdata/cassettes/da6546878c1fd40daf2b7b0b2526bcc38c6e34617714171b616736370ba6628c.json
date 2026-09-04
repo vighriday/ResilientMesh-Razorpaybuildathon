@@ -1,0 +1,30 @@
+{
+  "digest": "da6546878c1fd40daf2b7b0b2526bcc38c6e34617714171b616736370ba6628c",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at netbanking:hdfc inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.6,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "netbanking:hdfc is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on netbanking would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

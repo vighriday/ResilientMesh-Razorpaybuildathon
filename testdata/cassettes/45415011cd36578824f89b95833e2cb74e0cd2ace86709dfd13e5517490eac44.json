@@ -1,0 +1,30 @@
+{
+  "digest": "45415011cd36578824f89b95833e2cb74e0cd2ace86709dfd13e5517490eac44",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:ybl at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.82,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names upi:paytm, a different issuer on the same method. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. The open notice on upi:paytm is a different issuer and explains nothing here. Attempt 3 failing identically rules out a one-off switch error. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

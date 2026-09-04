@@ -1,0 +1,30 @@
+{
+  "digest": "02ecf87c3ac222fa5f98e5606588a59524ed2ecf2b57b4fa3f8be4ced0b8f215",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "undeclared outage at netbanking:sbin: 4% success over 214 attempts with nothing published yet",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.76,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:sbin is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and no Razorpay downtime notice covers it. Nothing is published for this issuer, but a rate this low over this many attempts is not sampling noise; the notice is lagging the failure. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

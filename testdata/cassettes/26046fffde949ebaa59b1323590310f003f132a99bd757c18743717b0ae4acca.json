@@ -1,0 +1,30 @@
+{
+  "digest": "26046fffde949ebaa59b1323590310f003f132a99bd757c18743717b0ae4acca",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:sbin: 92% success over 148 attempts against a 91% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.5,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 720,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:sbin is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and no Razorpay downtime notice covers it. No signal corroborates an issuer problem, so this is a single failure against a working rail and the cause is genuinely underdetermined. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on card after 12m, giving the issuer time to shed the load causing this. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "8927ea57f44580ac7df49c3629fb769b1dac019e959e228277d325d508e6b8df",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at upi:okhdfcbank inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.68,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "card",
+    "reasoning_trace": "upi:okhdfcbank has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. The payer is still in checkout, so morphing the live session to card recovers this order now; a retry on upi_intent would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

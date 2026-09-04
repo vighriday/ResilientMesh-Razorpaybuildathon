@@ -1,0 +1,30 @@
+{
+  "digest": "a7721ab6fb943c788921fb9c7c1aa6a598b0aeaf52aa21aa17462f76574ff2ea",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "card",
+    "issuer_key": "card:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "outage at card:hdfc: a medium-severity notice on this issuer alongside a 4% rolling success rate",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.82,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:hdfc is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window over a collapsed success rate is an outage in practice, whatever the notice is graded. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

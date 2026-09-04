@@ -1,0 +1,30 @@
+{
+  "digest": "a565541bf82f512a62bc9afd1854c5a6b302065953e12e44511a97db8d7f9706",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at netbanking:hdfc inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.74,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:hdfc has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

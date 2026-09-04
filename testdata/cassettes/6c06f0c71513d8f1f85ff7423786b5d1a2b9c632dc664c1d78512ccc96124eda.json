@@ -1,0 +1,30 @@
+{
+  "digest": "6c06f0c71513d8f1f85ff7423786b5d1a2b9c632dc664c1d78512ccc96124eda",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:ybl at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.78,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 240,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names upi:paytm, a different issuer on the same method. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. The open notice on upi:paytm is a different issuer and explains nothing here. No session is open, so recovery is a scheduling problem: retry on upi_intent after 4m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

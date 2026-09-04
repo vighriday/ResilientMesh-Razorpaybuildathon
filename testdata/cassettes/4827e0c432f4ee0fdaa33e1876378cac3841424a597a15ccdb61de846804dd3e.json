@@ -1,0 +1,30 @@
+{
+  "digest": "4827e0c432f4ee0fdaa33e1876378cac3841424a597a15ccdb61de846804dd3e",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at upi:okhdfcbank: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.62,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 720,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on upi_intent after 12m, giving the issuer time to shed the load causing this. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

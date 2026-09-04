@@ -1,0 +1,30 @@
+{
+  "digest": "172e729842ceb035778b2b2a0163bfe052efa9496c43d843b962f0f07cfc343e",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transit-level timeout against upi:okhdfcbank, which is answering 92% of attempts normally",
+    "failure_classification": "NETWORK_TIMEOUT",
+    "confidence_score": 0.68,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 120,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names upi:okaxis, a different issuer on the same method. A timeout while the issuer is answering everyone else puts the fault in transit, not at the bank; the authorisation may even have landed and lost its response. The open notice on upi:okaxis is a different issuer and explains nothing here. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on upi_intent after 2m, long enough for a transit fault to clear and short enough that the order is still warm. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

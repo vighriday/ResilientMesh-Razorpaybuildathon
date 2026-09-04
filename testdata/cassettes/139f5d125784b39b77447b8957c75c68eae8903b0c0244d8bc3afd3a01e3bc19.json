@@ -1,0 +1,30 @@
+{
+  "digest": "139f5d125784b39b77447b8957c75c68eae8903b0c0244d8bc3afd3a01e3bc19",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:okicici at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.7,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 240,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. No session is open, so recovery is a scheduling problem: retry on upi_intent after 4m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

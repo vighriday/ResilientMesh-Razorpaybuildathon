@@ -1,0 +1,30 @@
+{
+  "digest": "2253a896f6d8ba92744a1d495a44b009bb4fefe3ef7f8224d97bd9f5f0637e68",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at netbanking:hdfc; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.9,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 3600,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:hdfc has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The measured decline tracks the published window, so the notice explains the failure without needing a transaction-level cause. Attempt 3 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on netbanking after 1h, by which point the published window will normally have closed. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

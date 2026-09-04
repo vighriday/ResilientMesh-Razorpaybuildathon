@@ -1,0 +1,30 @@
+{
+  "digest": "97edb600dfc9b92f8f0ac4a8a2ab5c7768bd7444c6e617e26b3dfd773c81fdfe",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:sbin: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.68,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 180,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names card:utib, a different issuer on the same method. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. The open notice on card:utib is a different issuer and explains nothing here. No session is open, so recovery is a scheduling problem: retry on card after 3m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

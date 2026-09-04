@@ -1,0 +1,30 @@
+{
+  "digest": "06e0e6d9a7159ba66c410755b4768e5c8c5a356003af391a8fd83d1c24b1029e",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at netbanking:sbin inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.74,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 180,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. No session is open, so recovery is a scheduling problem: retry on netbanking after 3m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

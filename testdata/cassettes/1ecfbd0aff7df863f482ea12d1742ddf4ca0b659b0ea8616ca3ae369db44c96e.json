@@ -1,0 +1,30 @@
+{
+  "digest": "1ecfbd0aff7df863f482ea12d1742ddf4ca0b659b0ea8616ca3ae369db44c96e",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at netbanking:sbin; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.9,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "netbanking:sbin is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The published notice and the measured rate agree, so this is issuer-side and nothing about this payment would have changed the outcome. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on netbanking would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

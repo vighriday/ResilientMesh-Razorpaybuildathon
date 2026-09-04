@@ -1,0 +1,30 @@
+{
+  "digest": "dd9a73f4823f67264c902e57253b33b3ab552decca889b685891dcd21da84909",
+  "context": {
+    "error_code": "payment_pending",
+    "method": "upi",
+    "issuer_key": "upi:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "outage at upi:paytm: a medium-severity notice on this issuer alongside a 4% rolling success rate",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.82,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "card",
+    "reasoning_trace": "upi:paytm is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window over a collapsed success rate is an outage in practice, whatever the notice is graded. The payer is still in checkout, so morphing the live session to card recovers this order now; a retry on upi_intent would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

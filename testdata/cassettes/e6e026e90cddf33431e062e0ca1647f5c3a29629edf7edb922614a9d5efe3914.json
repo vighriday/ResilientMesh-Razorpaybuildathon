@@ -1,0 +1,30 @@
+{
+  "digest": "e6e026e90cddf33431e062e0ca1647f5c3a29629edf7edb922614a9d5efe3914",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transit-level timeout against upi:okhdfcbank, which is answering 92% of attempts normally",
+    "failure_classification": "NETWORK_TIMEOUT",
+    "confidence_score": 0.71,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 60,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names upi:okaxis, a different issuer on the same method. A timeout while the issuer is answering everyone else puts the fault in transit, not at the bank; the authorisation may even have landed and lost its response. The open notice on upi:okaxis is a different issuer and explains nothing here. Attempt 2 failing the same way weakens the transient reading, which is why confidence is below a first failure. The session is live, but the issuer is fine and the same rail will almost certainly work, so moving the payer would spend friction on a problem that has already passed: retry on upi_intent after 1m, long enough for a transit fault to clear and short enough that the order is still warm."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

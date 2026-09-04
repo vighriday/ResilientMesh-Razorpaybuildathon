@@ -1,0 +1,30 @@
+{
+  "digest": "4c69127edbabecccfffdff7bbc0acb8801064f26338effbcd1d28c4da5219db6",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at upi:okhdfcbank: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.68,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 180,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. No session is open, so recovery is a scheduling problem: retry on upi_intent after 3m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

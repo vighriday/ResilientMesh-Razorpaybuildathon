@@ -1,0 +1,30 @@
+{
+  "digest": "b78a42ad80e51ebbaeee733c50879bb2f41a5d92d25ea21ca651b573d202cbd7",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "card",
+    "issuer_key": "card:icici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the card path for card:icici at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.8,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "card:icici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and no Razorpay downtime notice covers it. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. Attempt 2 failing identically rules out a one-off switch error. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on card would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

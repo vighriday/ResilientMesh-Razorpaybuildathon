@@ -1,0 +1,30 @@
+{
+  "digest": "add0fd1a07a3202f78708c119da3105f7fb8a4dfcc64df5e47a5ecb66bd6ec07",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:sbin: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.62,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names card:utib, a different issuer on the same method. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. The open notice on card:utib is a different issuer and explains nothing here. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on card would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

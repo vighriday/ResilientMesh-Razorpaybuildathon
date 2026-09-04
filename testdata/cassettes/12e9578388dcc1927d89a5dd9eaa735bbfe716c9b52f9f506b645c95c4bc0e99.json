@@ -1,0 +1,30 @@
+{
+  "digest": "12e9578388dcc1927d89a5dd9eaa735bbfe716c9b52f9f506b645c95c4bc0e99",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "card",
+    "issuer_key": "card:icici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at card:icici; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.94,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:icici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The published notice and the measured rate agree, so this is issuer-side and nothing about this payment would have changed the outcome. Attempt 3 failing identically rules out a one-off switch error. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "3016d4c02318236fb1babea7b6312ea23b81d7f66cd2ff3daf0500ad4a2db357",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at netbanking:hdfc: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.68,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "netbanking:hdfc has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names netbanking:axis, a different issuer on the same method. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. The open notice on netbanking:axis is a different issuer and explains nothing here. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on netbanking would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

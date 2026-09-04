@@ -1,0 +1,30 @@
+{
+  "digest": "88c5d91ed8c00ae5c7c9d1ca10f0e15f568bc1c0b5559a5ae8837e7f8c0be373",
+  "context": {
+    "error_code": "payment_timed_out",
+    "method": "upi",
+    "issuer_key": "upi:okhdfcbank",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transit-level timeout against upi:okhdfcbank, which is answering 92% of attempts normally",
+    "failure_classification": "NETWORK_TIMEOUT",
+    "confidence_score": 0.74,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okhdfcbank is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names upi:okaxis, a different issuer on the same method. A timeout while the issuer is answering everyone else puts the fault in transit, not at the bank; the authorisation may even have landed and lost its response. The open notice on upi:okaxis is a different issuer and explains nothing here. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

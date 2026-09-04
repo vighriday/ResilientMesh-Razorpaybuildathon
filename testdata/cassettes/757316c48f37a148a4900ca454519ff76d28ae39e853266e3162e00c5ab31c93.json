@@ -1,0 +1,30 @@
+{
+  "digest": "757316c48f37a148a4900ca454519ff76d28ae39e853266e3162e00c5ab31c93",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "card",
+    "issuer_key": "card:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "undeclared outage at card:hdfc: 4% success over 214 attempts with nothing published yet",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.76,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:hdfc is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names card:axis, a different issuer on the same method. Nothing is published for this issuer, but a rate this low over this many attempts is not sampling noise; the notice is lagging the failure. The open notice on card:axis is a different issuer and explains nothing here. No session is open, so recovery is a scheduling problem: retry on card after 15m, which is how long an unannounced outage of this depth usually takes to shed."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "7c5405d68d679afb431dd162f21f4199097a3f9efce19e0dfc050563e8d2d12a",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at upi:okicici inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.66,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 180,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. No session is open, so recovery is a scheduling problem: retry on upi_intent after 3m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

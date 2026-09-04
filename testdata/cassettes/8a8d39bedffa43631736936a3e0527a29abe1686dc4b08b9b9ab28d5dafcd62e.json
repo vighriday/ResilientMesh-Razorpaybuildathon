@@ -1,0 +1,30 @@
+{
+  "digest": "8a8d39bedffa43631736936a3e0527a29abe1686dc4b08b9b9ab28d5dafcd62e",
+  "context": {
+    "error_code": "payment_pending",
+    "method": "upi",
+    "issuer_key": "upi:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "outage at upi:paytm: a medium-severity notice on this issuer alongside a 4% rolling success rate",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.86,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 3600,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:paytm is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window over a collapsed success rate is an outage in practice, whatever the notice is graded. Attempt 3 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 1h, by which point the published window will normally have closed. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

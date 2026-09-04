@@ -1,0 +1,30 @@
+{
+  "digest": "32aed701a2bbb7c3b1c6f4f653490a6de7b6c7baff3457d2d1f8b3d842026003",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "card",
+    "issuer_key": "card:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:hdfc: 92% success over 148 attempts against a 91% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.56,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "card:hdfc is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and no Razorpay downtime notice covers it. No signal corroborates an issuer problem, so this is a single failure against a working rail and the cause is genuinely underdetermined. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on card would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

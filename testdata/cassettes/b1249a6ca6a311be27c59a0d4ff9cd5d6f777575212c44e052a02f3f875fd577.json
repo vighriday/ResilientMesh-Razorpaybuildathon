@@ -1,0 +1,30 @@
+{
+  "digest": "b1249a6ca6a311be27c59a0d4ff9cd5d6f777575212c44e052a02f3f875fd577",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:sbin: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.65,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 360,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names card:utib, a different issuer on the same method. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. The open notice on card:utib is a different issuer and explains nothing here. Attempt 2 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on card after 6m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

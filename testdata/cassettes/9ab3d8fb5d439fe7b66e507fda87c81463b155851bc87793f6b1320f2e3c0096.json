@@ -1,0 +1,30 @@
+{
+  "digest": "9ab3d8fb5d439fe7b66e507fda87c81463b155851bc87793f6b1320f2e3c0096",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at card:sbin; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.86,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The measured decline tracks the published window, so the notice explains the failure without needing a transaction-level cause. No session is open, so recovery is a scheduling problem: retry on card after 15m, by which point the published window will normally have closed."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

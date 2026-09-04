@@ -1,0 +1,30 @@
+{
+  "digest": "fbcd9e68ca2ae1ba155e7c7369b0e99bd083647123c3633a927cc48508642e13",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:ybl at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.8,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 480,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and no Razorpay downtime notice covers it. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. Attempt 2 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 8m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

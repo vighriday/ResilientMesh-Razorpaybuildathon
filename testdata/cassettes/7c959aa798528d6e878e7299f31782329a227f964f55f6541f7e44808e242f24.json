@@ -1,0 +1,30 @@
+{
+  "digest": "7c959aa798528d6e878e7299f31782329a227f964f55f6541f7e44808e242f24",
+  "context": {
+    "error_code": "gateway_error",
+    "method": "wallet",
+    "issuer_key": "wallet:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the wallet path for wallet:paytm at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.74,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "wallet:paytm has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. Attempt 3 failing identically rules out a one-off switch error. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "0811aa0d0a444a143ad0fb348eaf4748e6b6fb2255cf41b364005a12cd8f4572",
+  "context": {
+    "error_code": "gateway_error",
+    "method": "wallet",
+    "issuer_key": "wallet:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the wallet path for wallet:paytm at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.82,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "wallet:paytm is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names wallet:phonepe, a different issuer on the same method. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. The open notice on wallet:phonepe is a different issuer and explains nothing here. Attempt 3 failing identically rules out a one-off switch error. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on wallet would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

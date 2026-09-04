@@ -1,0 +1,30 @@
+{
+  "digest": "5b90c3e69df7efb24b6e7814965116c5b4b26c38857b4f1fb6c4707aeb7ec382",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:okicici at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.8,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 480,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names upi:okaxis, a different issuer on the same method. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. The open notice on upi:okaxis is a different issuer and explains nothing here. Attempt 2 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 8m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

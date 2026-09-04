@@ -1,0 +1,30 @@
+{
+  "digest": "d0927a531ad4e82097bfc909a0837179a34769cbe621a33b50e290bb3fdb72b6",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:ybl at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.72,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 480,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. Attempt 2 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 8m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

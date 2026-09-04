@@ -1,0 +1,30 @@
+{
+  "digest": "d446a7e540f4e9582020ea68be8dd126e883439cea185b73dad4450210f16f95",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at upi:okicici; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.94,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 3600,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The published notice and the measured rate agree, so this is issuer-side and nothing about this payment would have changed the outcome. Attempt 3 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 1h, by which point the published window will normally have closed. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

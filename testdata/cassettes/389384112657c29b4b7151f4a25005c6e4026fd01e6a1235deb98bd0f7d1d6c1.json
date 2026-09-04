@@ -1,0 +1,30 @@
+{
+  "digest": "389384112657c29b4b7151f4a25005c6e4026fd01e6a1235deb98bd0f7d1d6c1",
+  "context": {
+    "error_code": "gateway_error",
+    "method": "wallet",
+    "issuer_key": "wallet:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the wallet path for wallet:paytm at 4% success over 214 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.82,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "wallet:paytm is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names wallet:phonepe, a different issuer on the same method. The code names the gateway layer and the collapse is confined to this path, so the fault is between the mesh and the issuer rather than at the issuer. The open notice on wallet:phonepe is a different issuer and explains nothing here. Attempt 3 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on wallet after 15m, which is how long gateway faults of this shape usually take to clear. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

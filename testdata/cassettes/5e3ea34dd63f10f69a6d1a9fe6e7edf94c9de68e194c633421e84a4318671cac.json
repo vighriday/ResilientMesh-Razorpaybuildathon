@@ -1,0 +1,30 @@
+{
+  "digest": "5e3ea34dd63f10f69a6d1a9fe6e7edf94c9de68e194c633421e84a4318671cac",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "gateway-layer fault reported as upi_psp_error while upi:ybl itself is healthy",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.68,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names upi:paytm, a different issuer on the same method. The issuer is answering normally, so a gateway-scoped code with no supporting telemetry is a thin claim: it is the most likely reading, not a confident one. The open notice on upi:paytm is a different issuer and explains nothing here. Attempt 3 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 15m, which is how long gateway faults of this shape usually take to clear. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

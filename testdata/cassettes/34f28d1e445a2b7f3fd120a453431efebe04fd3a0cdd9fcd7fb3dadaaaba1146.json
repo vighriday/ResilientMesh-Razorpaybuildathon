@@ -1,0 +1,30 @@
+{
+  "digest": "34f28d1e445a2b7f3fd120a453431efebe04fd3a0cdd9fcd7fb3dadaaaba1146",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "outage at netbanking:hdfc: a medium-severity notice on this issuer alongside a 4% rolling success rate",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.82,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:hdfc is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window over a collapsed success rate is an outage in practice, whatever the notice is graded. No session is open, so recovery is a scheduling problem: retry on netbanking after 15m, by which point the published window will normally have closed."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

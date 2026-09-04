@@ -1,0 +1,30 @@
+{
+  "digest": "8c58627589a73a25fa9a1c3aa604d358ff3c2db985f73881b5f1de0ab4d437ef",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "gateway-layer fault reported as upi_psp_error while upi:ybl itself is healthy",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.64,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and no Razorpay downtime notice covers it. The issuer is answering normally, so a gateway-scoped code with no supporting telemetry is a thin claim: it is the most likely reading, not a confident one. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "b6a6547e5fa6c1e74e86b0f91a95742f4ec0b99165fbbe3aaa2586772ef511a8",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at upi:ybl inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.71,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 360,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. Attempt 2 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on upi_intent after 6m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "6a09413ce10da242024a8331daee2304258d684c358f9fd769329e81b0f036c2",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "card",
+    "issuer_key": "card:icici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "gateway-layer fault reported as gateway_technical_error while card:icici itself is healthy",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.6,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 240,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:icici is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names card:kkbk, a different issuer on the same method. The issuer is answering normally, so a gateway-scoped code with no supporting telemetry is a thin claim: it is the most likely reading, not a confident one. The open notice on card:kkbk is a different issuer and explains nothing here. No session is open, so recovery is a scheduling problem: retry on card after 4m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

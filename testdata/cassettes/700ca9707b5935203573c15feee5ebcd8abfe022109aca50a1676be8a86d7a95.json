@@ -1,0 +1,30 @@
+{
+  "digest": "700ca9707b5935203573c15feee5ebcd8abfe022109aca50a1676be8a86d7a95",
+  "context": {
+    "error_code": "gateway_error",
+    "method": "wallet",
+    "issuer_key": "wallet:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the wallet path for wallet:paytm at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.7,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "wallet:paytm has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on wallet would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

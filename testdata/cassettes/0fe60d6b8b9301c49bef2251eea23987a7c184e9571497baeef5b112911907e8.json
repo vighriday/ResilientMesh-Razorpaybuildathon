@@ -1,0 +1,30 @@
+{
+  "digest": "0fe60d6b8b9301c49bef2251eea23987a7c184e9571497baeef5b112911907e8",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at upi:ybl; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.92,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "card",
+    "reasoning_trace": "upi:ybl is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The published notice and the measured rate agree, so this is issuer-side and nothing about this payment would have changed the outcome. Attempt 2 failing identically rules out a one-off switch error. The payer is still in checkout, so morphing the live session to card recovers this order now; a retry on upi_intent would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

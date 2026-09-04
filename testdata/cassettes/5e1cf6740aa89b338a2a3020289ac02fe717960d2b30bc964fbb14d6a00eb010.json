@@ -1,0 +1,30 @@
+{
+  "digest": "5e1cf6740aa89b338a2a3020289ac02fe717960d2b30bc964fbb14d6a00eb010",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": true,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "undeclared outage at netbanking:sbin: 4% success over 214 attempts with nothing published yet",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.76,
+    "recommended_action": "MANDATE_COMPLIANT_CASCADE",
+    "recommended_delay_seconds": 86400,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:sbin is effectively down at 4% success over 214 attempts against a 90% baseline, with the breaker already half-open, and the only open notice names netbanking:punb, a different issuer on the same method. Nothing is published for this issuer, but a rate this low over this many attempts is not sampling noise; the notice is lagging the failure. The open notice on netbanking:punb is a different issuer and explains nothing here. This is a recurring debit, so RBI's 24-hour cooling window is longer than any backoff this class would justify: the timing is set by regulation, not by the hazard estimate, and the pre-debit notice has to go out before the retry does."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

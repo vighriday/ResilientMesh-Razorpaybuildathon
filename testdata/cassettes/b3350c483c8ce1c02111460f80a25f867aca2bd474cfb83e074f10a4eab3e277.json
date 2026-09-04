@@ -1,0 +1,30 @@
+{
+  "digest": "b3350c483c8ce1c02111460f80a25f867aca2bd474cfb83e074f10a4eab3e277",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "card",
+    "issuer_key": "card:icici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "partial degradation at card:icici inside a medium-severity maintenance window",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.6,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 720,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:icici is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and Razorpay has a medium-severity downtime open on this issuer, running about 4 minutes. A medium-severity window with attempts still succeeding is degradation rather than an outage, so recovery is worth attempting inside it. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on card after 12m, giving the issuer time to shed the load causing this. This is the last attempt the stop rule permits, so it is spent after the window rather than inside it."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

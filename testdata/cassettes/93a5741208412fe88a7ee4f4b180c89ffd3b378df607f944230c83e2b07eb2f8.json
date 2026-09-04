@@ -1,0 +1,30 @@
+{
+  "digest": "93a5741208412fe88a7ee4f4b180c89ffd3b378df607f944230c83e2b07eb2f8",
+  "context": {
+    "error_code": "payment_pending",
+    "method": "upi",
+    "issuer_key": "upi:paytm",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at upi:paytm: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.65,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 360,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:paytm has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. Attempt 2 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on upi_intent after 6m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

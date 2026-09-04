@@ -1,0 +1,30 @@
+{
+  "digest": "7ed5d2e2a5a7e3f3ae200cf067a9dd70983f6d4560f717fc536177e12d7cefdb",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at netbanking:sbin; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.86,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The measured decline tracks the published window, so the notice explains the failure without needing a transaction-level cause. No session is open, so recovery is a scheduling problem: retry on netbanking after 15m, by which point the published window will normally have closed."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

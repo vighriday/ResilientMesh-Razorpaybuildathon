@@ -1,0 +1,30 @@
+{
+  "digest": "f5248595c5bb7b616b05d43a5e1c939fefc463268432d7a37cf8cc926f4da7fb",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at card:sbin: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.62,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and no Razorpay downtime notice covers it. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. Attempt 3 failing the same way weakens the transient reading, which is why confidence is below a first failure. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on card would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

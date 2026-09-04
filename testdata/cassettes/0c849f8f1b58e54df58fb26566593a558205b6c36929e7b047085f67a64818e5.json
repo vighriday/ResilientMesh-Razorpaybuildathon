@@ -1,0 +1,30 @@
+{
+  "digest": "0c849f8f1b58e54df58fb26566593a558205b6c36929e7b047085f67a64818e5",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "card",
+    "issuer_key": "card:icici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "gateway-layer fault reported as gateway_technical_error while card:icici itself is healthy",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.62,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 480,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:icici is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and no Razorpay downtime notice covers it. The issuer is answering normally, so a gateway-scoped code with no supporting telemetry is a thin claim: it is the most likely reading, not a confident one. Attempt 2 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on card after 8m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

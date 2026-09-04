@@ -1,0 +1,30 @@
+{
+  "digest": "015a85a98f6cdb08da3db5291172fa99e35cbb51135493cb4df0c981db548fd3",
+  "context": {
+    "error_code": "bank_technical_error",
+    "method": "card",
+    "issuer_key": "card:hdfc",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at card:hdfc; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.8,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 900,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "card:hdfc is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The window opened faster than a 5-minute counter can reflect, so the notice is the better evidence and the healthy rate is stale rather than contradictory. No session is open, so recovery is a scheduling problem: retry on card after 15m, by which point the published window will normally have closed."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

@@ -1,0 +1,30 @@
+{
+  "digest": "f30f7a2c7709468f5a5b85e4303b10a09de839ba67b9c1d7d45c4cd20d2860d6",
+  "context": {
+    "error_code": "issuer_down",
+    "method": "card",
+    "issuer_key": "card:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "declared high-severity outage at card:sbin; the failure is the outage, not this payment",
+    "failure_classification": "ISSUER_OUTAGE",
+    "confidence_score": 0.9,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "upi_intent",
+    "reasoning_trace": "card:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and Razorpay has a high-severity downtime open on this exact issuer, running about 13 minutes. The measured decline tracks the published window, so the notice explains the failure without needing a transaction-level cause. Attempt 3 failing identically rules out a one-off switch error. The payer is still in checkout, so morphing the live session to upi_intent recovers this order now; a retry on card would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

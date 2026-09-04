@@ -1,0 +1,30 @@
+{
+  "digest": "4a13991a2217cede77420d1e00b811098c4ada5d1fe64c981e3696c9abee911d",
+  "context": {
+    "error_code": "upi_psp_error",
+    "method": "upi",
+    "issuer_key": "upi:ybl",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 1,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "gateway-layer fault reported as upi_psp_error while upi:ybl itself is healthy",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.64,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 240,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:ybl is healthy on the rolling window at 92% success over 148 attempts against a 91% portfolio baseline, and the only open notice names upi:paytm, a different issuer on the same method. The issuer is answering normally, so a gateway-scoped code with no supporting telemetry is a thin claim: it is the most likely reading, not a confident one. The open notice on upi:paytm is a different issuer and explains nothing here. No session is open, so recovery is a scheduling problem: retry on upi_intent after 4m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

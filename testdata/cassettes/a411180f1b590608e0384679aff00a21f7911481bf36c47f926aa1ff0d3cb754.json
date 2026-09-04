@@ -1,0 +1,30 @@
+{
+  "digest": "a411180f1b590608e0384679aff00a21f7911481bf36c47f926aa1ff0d3cb754",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": true,
+    "attempt_number": 3,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:okicici at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.74,
+    "recommended_action": "IN_SESSION_RAIL_MORPH",
+    "recommended_delay_seconds": 0,
+    "suggested_fallback_rail": "card",
+    "reasoning_trace": "upi:okicici has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names upi:okaxis, a different issuer on the same method. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. The open notice on upi:okaxis is a different issuer and explains nothing here. Attempt 3 failing identically rules out a one-off switch error. The payer is still in checkout, so morphing the live session to card recovers this order now; a retry on upi_intent would land after they have gone."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

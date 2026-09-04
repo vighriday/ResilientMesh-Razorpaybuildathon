@@ -1,0 +1,30 @@
+{
+  "digest": "b03f6ad9a5c85de6d9cb9a93479c91a6f2e7695d27183ccb808935467c0bf9ac",
+  "context": {
+    "error_code": "server_error",
+    "method": "netbanking",
+    "issuer_key": "netbanking:sbin",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "transient degradation at netbanking:sbin: 32% success over 96 attempts against a 90% baseline",
+    "failure_classification": "TRANSIENT_ISSUER_DEGRADATION",
+    "confidence_score": 0.65,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 360,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "netbanking:sbin has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names netbanking:punb, a different issuer on the same method. Half the traffic is still completing, so the issuer is shedding load rather than refusing it; that recovers on its own. The open notice on netbanking:punb is a different issuer and explains nothing here. Attempt 2 failing the same way weakens the transient reading, which is why confidence is below a first failure. No session is open, so recovery is a scheduling problem: retry on netbanking after 6m, giving the issuer time to shed the load causing this."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}

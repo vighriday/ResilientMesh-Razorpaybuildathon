@@ -1,0 +1,30 @@
+{
+  "digest": "f9a1ab1b4498a439846665ab697d3d6168d1f2f76516ec04a0e9f2f8c8ad2d5f",
+  "context": {
+    "error_code": "gateway_technical_error",
+    "method": "upi",
+    "issuer_key": "upi:okicici",
+    "amount_band": "mid_2k_10k",
+    "is_recurring": false,
+    "session_active": false,
+    "attempt_number": 2,
+    "available_rails": [
+      "card",
+      "netbanking",
+      "upi_collect",
+      "upi_intent",
+      "wallet"
+    ]
+  },
+  "proposal": {
+    "incident_id": "",
+    "inferred_root_cause": "PSP degradation on the upi path for upi:okicici at 32% success over 96 attempts",
+    "failure_classification": "PSP_DEGRADATION",
+    "confidence_score": 0.72,
+    "recommended_action": "ASYNC_EXPONENTIAL_RETRY",
+    "recommended_delay_seconds": 480,
+    "suggested_fallback_rail": "none",
+    "reasoning_trace": "upi:okicici has dropped to 32% success over 96 attempts against a 90% portfolio baseline, and the only open notice names upi:okaxis, a different issuer on the same method. Partial success means the issuer is reachable, so the losses are concentrated in the gateway hop the code points at. The open notice on upi:okaxis is a different issuer and explains nothing here. Attempt 2 failing identically rules out a one-off switch error. No session is open, so recovery is a scheduling problem: retry on upi_intent after 8m, which is how long gateway faults of this shape usually take to clear."
+  },
+  "recorded_at": "2026-03-14T09:00:00Z"
+}
