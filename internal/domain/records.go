@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"strings"
 	"time"
 )
 
@@ -80,38 +81,90 @@ type OutboxEvent struct {
 	DispatchedAt *time.Time  `json:"dispatched_at,omitempty"`
 }
 
+// MandateCategory determines which RBI additional-factor-authentication ceiling
+// applies to a recurring debit.
+//
+// Under the e-mandate framework a registered mandate may debit without a fresh
+// additional factor only up to a ceiling. The general ceiling is Rs 15,000;
+// selected categories are permitted up to Rs 1,00,000. Above the applicable
+// ceiling the debit requires authentication and cannot simply be re-presented,
+// so an automatic retry there is not a suboptimal choice — it is a breach.
+type MandateCategory string
+
+const (
+	CategoryGeneral        MandateCategory = "general"
+	CategoryInsurance      MandateCategory = "insurance"
+	CategoryMutualFund     MandateCategory = "mutual_fund"
+	CategoryCreditCardBill MandateCategory = "credit_card_bill"
+)
+
+// AFA ceilings in paisa.
+const (
+	AFACeilingGeneralPaisa  int64 = 15_000_00
+	AFACeilingElevatedPaisa int64 = 1_00_000_00
+)
+
+// AFACeilingPaisa returns the ceiling above which this category's debits need a
+// fresh additional factor. An unrecognised category gets the general ceiling:
+// an unknown category must never widen a regulatory limit.
+func (c MandateCategory) AFACeilingPaisa() int64 {
+	switch c {
+	case CategoryInsurance, CategoryMutualFund, CategoryCreditCardBill:
+		return AFACeilingElevatedPaisa
+	default:
+		return AFACeilingGeneralPaisa
+	}
+}
+
+// ParseMandateCategory normalises free-form category input, defaulting to the
+// stricter general ceiling.
+func ParseMandateCategory(s string) MandateCategory {
+	switch MandateCategory(strings.ToLower(strings.TrimSpace(s))) {
+	case CategoryInsurance:
+		return CategoryInsurance
+	case CategoryMutualFund:
+		return CategoryMutualFund
+	case CategoryCreditCardBill:
+		return CategoryCreditCardBill
+	default:
+		return CategoryGeneral
+	}
+}
+
 // MandateRecord tracks recurring-mandate compliance state. The RBI invariants
 // are enforced against this record, not against in-memory counters, so a
 // process restart cannot reset a cooling window.
 type MandateRecord struct {
-	SubscriptionID     string     `json:"subscription_id"`
-	CustomerID         string     `json:"customer_id,omitempty"`
-	AmountPaisa        int64      `json:"amount_paisa"`
-	LastAttemptAt      *time.Time `json:"last_attempt_at,omitempty"`
-	NextEligibleAt     *time.Time `json:"next_eligible_at,omitempty"`
-	AttemptsInCycle    int        `json:"attempts_in_cycle"`
-	PreDebitNotifiedAt *time.Time `json:"pre_debit_notified_at,omitempty"`
-	CycleKey           string     `json:"cycle_key"`
-	Halted             bool       `json:"halted"`
-	HaltReason         string     `json:"halt_reason,omitempty"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	SubscriptionID     string          `json:"subscription_id"`
+	CustomerID         string          `json:"customer_id,omitempty"`
+	AmountPaisa        int64           `json:"amount_paisa"`
+	LastAttemptAt      *time.Time      `json:"last_attempt_at,omitempty"`
+	NextEligibleAt     *time.Time      `json:"next_eligible_at,omitempty"`
+	AttemptsInCycle    int             `json:"attempts_in_cycle"`
+	PreDebitNotifiedAt *time.Time      `json:"pre_debit_notified_at,omitempty"`
+	CycleKey           string          `json:"cycle_key"`
+	Category           MandateCategory `json:"category"`
+	Halted             bool            `json:"halted"`
+	HaltReason         string          `json:"halt_reason,omitempty"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // AttemptRecord is one executed recovery attempt and its outcome. This is the
 // table the NRCV benchmark aggregates over.
 type AttemptRecord struct {
-	ID              int64     `json:"id"`
-	IncidentID      string    `json:"incident_id"`
-	AttemptNumber   int       `json:"attempt_number"`
-	Action          Action    `json:"action"`
-	Rail            Rail      `json:"rail"`
-	AmountPaisa     int64     `json:"amount_paisa"`
-	Succeeded       bool      `json:"succeeded"`
-	GatewayFeePaisa int64     `json:"gateway_fee_paisa"`
-	FrictionPaisa   int64     `json:"friction_paisa"`
-	ErrorCode       string    `json:"error_code,omitempty"`
-	StartedAt       time.Time `json:"started_at"`
-	CompletedAt     time.Time `json:"completed_at"`
+	ID              int64                  `json:"id"`
+	IncidentID      string                 `json:"incident_id"`
+	AttemptNumber   int                    `json:"attempt_number"`
+	Action          Action                 `json:"action"`
+	Rail            Rail                   `json:"rail"`
+	Presentation    InstrumentPresentation `json:"presentation"`
+	AmountPaisa     int64                  `json:"amount_paisa"`
+	Succeeded       bool                   `json:"succeeded"`
+	GatewayFeePaisa int64                  `json:"gateway_fee_paisa"`
+	FrictionPaisa   int64                  `json:"friction_paisa"`
+	ErrorCode       string                 `json:"error_code,omitempty"`
+	StartedAt       time.Time              `json:"started_at"`
+	CompletedAt     time.Time              `json:"completed_at"`
 }
 
 // SessionRecord is a live checkout session eligible for in-session healing.
@@ -154,6 +207,9 @@ const (
 	AuditAttemptResult   AuditKind = "ATTEMPT_RESULT"
 	AuditRailMorph       AuditKind = "RAIL_MORPHED"
 	AuditPreDebitNotice  AuditKind = "PRE_DEBIT_NOTIFIED"
+	AuditAFABlocked      AuditKind = "AFA_CEILING_BLOCKED"
+	AuditDowntimeRelease AuditKind = "RELEASED_ON_DOWNTIME_RESOLUTION"
+	AuditDeadLettered    AuditKind = "DEAD_LETTERED"
 	AuditBreakerTripped  AuditKind = "BREAKER_TRIPPED"
 	AuditBreakerClosed   AuditKind = "BREAKER_CLOSED"
 	AuditIncidentClosed  AuditKind = "INCIDENT_CLOSED"

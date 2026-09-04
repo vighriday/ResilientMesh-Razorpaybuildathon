@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -40,14 +41,21 @@ const (
 	// the RBI cooling window and pre-debit notification obligations.
 	ActionMandateCascade Action = "MANDATE_COMPLIANT_CASCADE"
 
+	// ActionInstrumentRefresh re-presents the same instrument through a
+	// different credential form — typically a network token refreshed via the
+	// account updater — rather than retrying the failed presentation unchanged.
+	// It is the correct response to a decline that looks terminal but is really
+	// a stale credential.
+	ActionInstrumentRefresh Action = "INSTRUMENT_REFRESH"
+
 	// ActionAbstain permanently stops recovery for this incident. It is the
 	// safe default for every ambiguous or malformed input.
 	ActionAbstain Action = "PERMANENT_ABSTAIN"
 )
 
 var allActions = map[Action]struct{}{
-	ActionRailMorph: {}, ActionAsyncRetry: {},
-	ActionMandateCascade: {}, ActionAbstain: {},
+	ActionRailMorph: {}, ActionAsyncRetry: {}, ActionMandateCascade: {},
+	ActionInstrumentRefresh: {}, ActionAbstain: {},
 }
 
 func (a Action) Valid() bool { _, ok := allActions[a]; return ok }
@@ -72,6 +80,7 @@ const (
 	ClassPSPDegradation       FailureClass = "PSP_DEGRADATION"
 	ClassCustomerAction       FailureClass = "CUSTOMER_ACTION_REQUIRED"
 	ClassInsufficientFunds    FailureClass = "INSUFFICIENT_FUNDS"
+	ClassInstrumentStale      FailureClass = "INSTRUMENT_STALE"
 	ClassPermanentInstrument  FailureClass = "PERMANENT_INSTRUMENT_FAILURE"
 	ClassUnknown              FailureClass = "UNKNOWN"
 )
@@ -79,7 +88,7 @@ const (
 var allClasses = map[FailureClass]struct{}{
 	ClassTransientDegradation: {}, ClassIssuerOutage: {}, ClassNetworkTimeout: {},
 	ClassPSPDegradation: {}, ClassCustomerAction: {}, ClassInsufficientFunds: {},
-	ClassPermanentInstrument: {}, ClassUnknown: {},
+	ClassPermanentInstrument: {}, ClassInstrumentStale: {}, ClassUnknown: {},
 }
 
 func (c FailureClass) Valid() bool { _, ok := allClasses[c]; return ok }
@@ -93,14 +102,44 @@ func ParseFailureClass(s string) FailureClass {
 }
 
 // Recoverable reports whether a class is worth spending a retry on at all.
+//
+// The switch enumerates the recoverable classes rather than the unrecoverable
+// ones, so an unrecognised value — including one a model invented — is not
+// recoverable. Defaulting the other way would let a fabricated classification
+// buy a retry, which is a fail-open path on the money side.
 func (c FailureClass) Recoverable() bool {
 	switch c {
-	case ClassPermanentInstrument, ClassUnknown:
-		return false
-	default:
+	case ClassTransientDegradation, ClassIssuerOutage, ClassNetworkTimeout,
+		ClassPSPDegradation, ClassCustomerAction, ClassInsufficientFunds,
+		ClassInstrumentStale:
 		return true
+	default:
+		return false
 	}
 }
+
+// InstrumentPresentation is how a stored instrument is offered to the issuer on
+// an attempt.
+//
+// A retry that presents the same instrument the same way is a strictly weaker
+// retry: if the presentation is what failed, repeating it cannot succeed.
+// Making presentation part of the action space is what turns "try again" into
+// "try differently".
+type InstrumentPresentation string
+
+const (
+	PresentationUnchanged    InstrumentPresentation = "unchanged"
+	PresentationNetworkToken InstrumentPresentation = "network_token"
+	PresentationStoredCred   InstrumentPresentation = "stored_credential"
+	PresentationFreshAuth    InstrumentPresentation = "fresh_authorisation"
+)
+
+var allPresentations = map[InstrumentPresentation]struct{}{
+	PresentationUnchanged: {}, PresentationNetworkToken: {},
+	PresentationStoredCred: {}, PresentationFreshAuth: {},
+}
+
+func (p InstrumentPresentation) Valid() bool { _, ok := allPresentations[p]; return ok }
 
 // ---------------------------------------------------------------------------
 // Inference provenance
@@ -215,11 +254,17 @@ type DiagnosticProposal struct {
 	SuggestedFallbackRail Rail         `json:"suggested_fallback_rail"`
 	ReasoningTrace        string       `json:"reasoning_trace"`
 
-	// Provenance, filled by the agent layer rather than the model itself.
-	Mode      InferenceMode `json:"mode"`
-	Model     string        `json:"model,omitempty"`
-	LatencyMS int64         `json:"latency_ms,omitempty"`
-	Degraded  bool          `json:"degraded,omitempty"`
+	// Provenance, stamped by the agent layer after unmarshalling.
+	//
+	// These carry `json:"-"` deliberately. With live tags a model response
+	// could set its own Mode and Degraded flags, forging the record of which
+	// tier answered — the exact field the console and the benchmark rely on to
+	// tell a live diagnosis from a degraded fallback. Making them
+	// unmarshalable removes the forgery rather than defending against it.
+	Mode      InferenceMode `json:"-"`
+	Model     string        `json:"-"`
+	LatencyMS int64         `json:"-"`
+	Degraded  bool          `json:"-"`
 }
 
 // Field bounds. Free text is capped because it is echoed into audit records and
@@ -233,6 +278,7 @@ const (
 
 var (
 	ErrConfidenceOutOfRange = errors.New("domain: confidence score out of bounds [0.0, 1.0]")
+	ErrConfidenceNotFinite  = errors.New("domain: confidence score is not a finite number")
 	ErrDelayOutOfRange      = errors.New("domain: recommended delay out of bounds")
 	ErrUnknownAction        = errors.New("domain: unknown recommended action")
 	ErrUnknownRail          = errors.New("domain: unknown fallback rail")
@@ -243,7 +289,15 @@ var (
 // allowed anywhere near the gatekeeper. It rejects rather than repairs, so a
 // malformed response is a visible failure instead of a silent coercion.
 func (p *DiagnosticProposal) Validate() error {
-	if p.ConfidenceScore < 0.0 || p.ConfidenceScore > 1.0 {
+	// NaN must be rejected explicitly: every ordered comparison against NaN is
+	// false, so a NaN confidence would slip past a range check written as
+	// (c < 0 || c > 1) and then read as *maximum* confidence at every
+	// downstream `confidence < threshold` gate. It is also unmarshalable by
+	// encoding/json, so it would fail the outbox and audit writes downstream.
+	if math.IsNaN(p.ConfidenceScore) || math.IsInf(p.ConfidenceScore, 0) {
+		return ErrConfidenceNotFinite
+	}
+	if !(p.ConfidenceScore >= 0.0 && p.ConfidenceScore <= 1.0) {
 		return ErrConfidenceOutOfRange
 	}
 	if p.RecommendedDelaySec < 0 || p.RecommendedDelaySec > MaxRecommendedDelay {
@@ -328,6 +382,16 @@ type SanitizedCommand struct {
 
 	PreDebitNotificationNeeded bool `json:"pre_debit_notification_needed"`
 
+	// Presentation is how the instrument will be offered on this attempt.
+	Presentation InstrumentPresentation `json:"presentation"`
+
+	// ReleaseOnDowntimeResolution marks a command parked behind a confirmed
+	// issuer outage. In this ecosystem issuer recovery is published rather than
+	// inferred, so waiting for the resolution notice beats waiting out a timer;
+	// DelaySeconds then acts as an upper bound rather than the mechanism.
+	ReleaseOnDowntimeResolution bool   `json:"release_on_downtime_resolution"`
+	AwaitingDowntimeKey         string `json:"awaiting_downtime_key,omitempty"`
+
 	// AppliedInvariants names every rule that fired, in order. This is what
 	// makes the audit trail defensible rather than decorative: a reviewer can
 	// see which constraint produced the outcome.
@@ -345,7 +409,12 @@ type SanitizedCommand struct {
 
 // Executable reports whether this command results in an outbound attempt.
 func (c SanitizedCommand) Executable() bool {
-	return c.Action == ActionRailMorph || c.Action == ActionAsyncRetry || c.Action == ActionMandateCascade
+	switch c.Action {
+	case ActionRailMorph, ActionAsyncRetry, ActionMandateCascade, ActionInstrumentRefresh:
+		return true
+	default:
+		return false
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -357,17 +426,17 @@ func (c SanitizedCommand) Executable() bool {
 // baseline matters: a 60% success rate is catastrophic for UPI and normal for
 // a small netbanking switch at 2 AM.
 type TelemetrySnapshot struct {
-	IssuerKey     string      `json:"issuer_key"`
-	WindowSeconds int         `json:"window_seconds"`
-	Attempts      int         `json:"attempts"`
-	Successes     int         `json:"successes"`
-	Failures      int         `json:"failures"`
-	SuccessRate   float64     `json:"success_rate"`
-	BaselineRate  float64     `json:"baseline_success_rate"`
-	P95LatencyMS  int64       `json:"p95_latency_ms,omitempty"`
-	BreakerState  string      `json:"breaker_state"`
-	TopErrorCodes []CodeCount `json:"top_error_codes,omitempty"`
-	SampledAt     time.Time   `json:"sampled_at"`
+	IssuerKey     string       `json:"issuer_key"`
+	WindowSeconds int          `json:"window_seconds"`
+	Attempts      int          `json:"attempts"`
+	Successes     int          `json:"successes"`
+	Failures      int          `json:"failures"`
+	SuccessRate   float64      `json:"success_rate"`
+	BaselineRate  float64      `json:"baseline_success_rate"`
+	P95LatencyMS  int64        `json:"p95_latency_ms,omitempty"`
+	BreakerState  BreakerState `json:"breaker_state"`
+	TopErrorCodes []CodeCount  `json:"top_error_codes,omitempty"`
+	SampledAt     time.Time    `json:"sampled_at"`
 }
 
 type CodeCount struct {
@@ -375,15 +444,55 @@ type CodeCount struct {
 	Count int    `json:"count"`
 }
 
-// Degraded reports whether the issuer is meaningfully below its own baseline
-// with enough samples for the comparison to mean anything. The sample floor
-// prevents a single failure in a quiet window from declaring an outage.
+// DegradedMinSamples is the evidence floor below which no outage verdict is
+// returned. It stops a single failure in a quiet window from declaring an
+// issuer down.
+const DegradedMinSamples = 8
+
+// DegradedAbsoluteRate is the success rate below which an issuer is degraded
+// regardless of the portfolio baseline.
+//
+// The baseline comparison alone is not enough: on a cold start, or in the first
+// window after a restart, BaselineRate is 0, and `rate < baseline*0.5` is then
+// false for every issuer no matter how badly it is failing. That is a silent
+// blind spot at exactly the moment — just after a deploy — when an outage is
+// most likely to be missed, so an absolute floor backs it up.
+const DegradedAbsoluteRate = 0.35
+
+// Degraded reports whether the issuer is meaningfully unhealthy, judged both
+// against its peers and against an absolute floor.
 func (t TelemetrySnapshot) Degraded() bool {
-	const minSamples = 8
-	if t.Attempts < minSamples {
+	if t.Attempts < DegradedMinSamples {
+		return false
+	}
+	if t.SuccessRate < DegradedAbsoluteRate {
+		return true
+	}
+	if t.BaselineRate <= 0 {
+		// No usable peer signal; the absolute floor above is the only verdict
+		// that can be justified from this data.
 		return false
 	}
 	return t.SuccessRate < t.BaselineRate*0.5
+}
+
+// Fresh reports whether the snapshot is recent enough to act on.
+//
+// Degraded() deliberately says nothing about age, because a snapshot is a
+// value rather than a live reading. A consumer that skips this check is
+// trusting arbitrarily stale telemetry — which, after a worker stall, means
+// routing traffic at an issuer using numbers from before the outage began.
+func (t TelemetrySnapshot) Fresh(now time.Time, maxAge time.Duration) bool {
+	if t.SampledAt.IsZero() {
+		return false
+	}
+	age := now.Sub(t.SampledAt)
+	// A snapshot from the future indicates clock skew between producer and
+	// consumer; treat it as unusable rather than infinitely fresh.
+	if age < 0 {
+		return -age <= maxAge
+	}
+	return age <= maxAge
 }
 
 // SortCodeCounts orders error codes by descending frequency, then by code, so

@@ -220,17 +220,22 @@ type DowntimeList struct {
 // rails can trip issuer abuse heuristics. They are rejected before any database
 // write or model call.
 var TerminalDeclineCodes = map[string]string{
-	"card_expired":                          "instrument expired",
 	"debit_instrument_blocked":              "instrument blocked by issuer",
 	"bank_account_invalid":                  "account does not exist",
 	"transaction_limit_exceeded":            "per-transaction ceiling breached",
 	"payment_method_not_enabled":            "method not enabled on issuer",
-	"card_not_supported":                    "network unsupported by issuer",
 	"invalid_card_number":                   "malformed instrument",
 	"card_lost_or_stolen":                   "instrument reported lost or stolen",
 	"international_transaction_not_allowed": "cross-border disabled on instrument",
 	"payment_cancelled_by_user":             "explicit user abandonment",
 	"mandate_revoked":                       "mandate cancelled by payer",
+}
+
+// RefreshableDeclineCodes are declines that a retry cannot fix but an
+// instrument refresh can. See IsRefreshable for why these are not terminal.
+var RefreshableDeclineCodes = map[string]string{
+	"card_expired":       "instrument expired; network token may still resolve",
+	"card_not_supported": "presentation unsupported; re-present via network token",
 }
 
 // AmbiguousFailureCodes are the codes whose root cause is genuinely
@@ -260,9 +265,43 @@ var SoftDeclineCodes = map[string]struct{}{
 	"mandate_not_active":    {},
 }
 
-func IsTerminalDecline(code string) bool { _, ok := TerminalDeclineCodes[code]; return ok }
-func IsAmbiguous(code string) bool       { _, ok := AmbiguousFailureCodes[code]; return ok }
-func IsSoftDecline(code string) bool     { _, ok := SoftDeclineCodes[code]; return ok }
+// normaliseCode folds an error code the same way ParseAction and ParseRail fold
+// their inputs. Without it the taxonomy lookups are exact map hits, so
+// "CARD_EXPIRED" or a code with a stray space is not recognised as terminal and
+// silently buys a retry on a dead instrument. Consistent normalisation across
+// every parser is what stops that class of bug.
+func normaliseCode(code string) string {
+	return strings.ToLower(strings.TrimSpace(code))
+}
+
+func IsTerminalDecline(code string) bool {
+	_, ok := TerminalDeclineCodes[normaliseCode(code)]
+	return ok
+}
+
+// IsRefreshable reports whether the decline is recoverable by re-presenting the
+// instrument rather than by retrying it unchanged.
+//
+// These codes look terminal and are widely treated as such, but the card number
+// changing does not mean the funding account went away: the network token still
+// resolves, and an account-updater refresh recovers a large share of them. RBI
+// card-on-file tokenization means recurring card payments in this market
+// already run on tokens, so the refresh path exists. Classifying them terminal
+// silently discards recoverable revenue.
+func IsRefreshable(code string) bool {
+	_, ok := RefreshableDeclineCodes[normaliseCode(code)]
+	return ok
+}
+
+func IsAmbiguous(code string) bool {
+	_, ok := AmbiguousFailureCodes[normaliseCode(code)]
+	return ok
+}
+
+func IsSoftDecline(code string) bool {
+	_, ok := SoftDeclineCodes[normaliseCode(code)]
+	return ok
+}
 
 // ---------------------------------------------------------------------------
 // Payment rails
