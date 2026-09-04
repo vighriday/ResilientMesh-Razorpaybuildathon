@@ -478,7 +478,15 @@ func (s *memStore) IncrementIncidentAttempts(ctx context.Context, id string) (in
 	if !ok {
 		return 0, fmt.Errorf("increment incident attempts: %w", ErrNotFound)
 	}
+	// The increment is a claim, mirroring the conditional UPDATE the real store
+	// runs. A fake that advanced the counter from any state would let two
+	// consumers both proceed and would prove concurrency safety the production
+	// store does not have.
+	if in.State != domain.IncidentReceived && in.State != domain.IncidentScheduled {
+		return 0, fmt.Errorf("increment incident attempts: %w", ErrConflict)
+	}
 	in.AttemptCount++
+	in.State = domain.IncidentExecuting
 	in.UpdatedAt = s.clock.Now()
 	return in.AttemptCount, nil
 }

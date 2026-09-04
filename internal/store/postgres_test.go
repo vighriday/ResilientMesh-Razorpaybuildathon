@@ -303,7 +303,13 @@ func TestIncidentInsertAndEventIDConflict(t *testing.T) {
 		t.Fatalf("UpdateIncidentState(unknown id) = %v, want ErrNotFound", err)
 	}
 
+	// The increment is a claim, so it only advances an incident that is waiting
+	// for work. Each pass therefore has to hand the incident back the way the
+	// worker does before the next one can take it.
 	for want := 1; want <= 3; want++ {
+		if err := p.UpdateIncidentState(ctx, in.ID, domain.IncidentScheduled); err != nil {
+			t.Fatalf("re-arming for attempt %d: %v", want, err)
+		}
 		n, err := p.IncrementIncidentAttempts(ctx, in.ID)
 		if err != nil {
 			t.Fatalf("IncrementIncidentAttempts: %v", err)
@@ -311,6 +317,16 @@ func TestIncidentInsertAndEventIDConflict(t *testing.T) {
 		if n != want {
 			t.Fatalf("attempt count = %d, want %d", n, want)
 		}
+		// A second claim while the first still holds it must be refused. This
+		// is what stops two consumers holding a duplicate delivery from both
+		// spending a gateway fee — the exact failure at-least-once transports
+		// produce routinely through a failed ack or a reclaimed slow message.
+		if _, err := p.IncrementIncidentAttempts(ctx, in.ID); !errors.Is(err, ErrConflict) {
+			t.Fatalf("second claim on a held incident = %v, want ErrConflict", err)
+		}
+	}
+	if err := p.UpdateIncidentState(ctx, in.ID, domain.IncidentGated); err != nil {
+		t.Fatalf("UpdateIncidentState: %v", err)
 	}
 
 	list, err := p.ListIncidents(ctx, 10)

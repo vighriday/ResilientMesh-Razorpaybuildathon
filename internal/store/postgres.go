@@ -284,9 +284,17 @@ SELECT id, payment_id, order_id, subscription_id, event_id, amount_paisa, curren
 
 	updateIncidentStateSQL = `UPDATE incidents SET state = $2, updated_at = now() WHERE id = $1`
 
+	// The increment doubles as the claim. The WHERE clause is what makes it one:
+	// only an incident that is waiting for work can be advanced, so a second
+	// consumer holding a redelivery of the same message updates zero rows and
+	// learns that someone else owns it. Splitting the check from the increment —
+	// read the state, decide, then increment — is the version that lets two
+	// consumers both see RECEIVED and both spend a gateway fee.
 	incrementIncidentAttemptsSQL = `
-UPDATE incidents SET attempt_count = attempt_count + 1, updated_at = now()
- WHERE id = $1 RETURNING attempt_count`
+UPDATE incidents
+   SET attempt_count = attempt_count + 1, state = 'EXECUTING', updated_at = now()
+ WHERE id = $1 AND state IN ('RECEIVED', 'SCHEDULED')
+RETURNING attempt_count`
 )
 
 // InsertIncident writes the incident. A second insert of the same event_id is
@@ -350,16 +358,30 @@ func (p *Postgres) UpdateIncidentState(ctx context.Context, id string, state dom
 	return nil
 }
 
-// IncrementIncidentAttempts bumps and returns the attempt counter in one
-// statement. The read-modify-write happens in the database because the stop
-// rule that caps retries is only as good as this counter: two workers doing it
-// in Go would both see the same value and both be allowed a third attempt.
+// IncrementIncidentAttempts claims an incident and returns its new attempt
+// number, or ErrConflict when another consumer already holds it.
+//
+// The read-modify-write happens in the database because the stop rule that caps
+// retries is only as good as this counter: two workers doing it in Go would
+// both see the same value and both be allowed another attempt. For the same
+// reason it also moves the incident to EXECUTING, so the claim and the count
+// advance together and at-least-once delivery cannot buy a second debit.
+//
+// ErrConflict here is ordinary, not exceptional. It is what a duplicate
+// delivery looks like, and duplicate delivery is a guarantee of the transport
+// rather than a fault.
 func (p *Postgres) IncrementIncidentAttempts(ctx context.Context, id string) (int, error) {
 	if err := checkText("id", id, 1, maxIdentifierLen); err != nil {
 		return 0, err
 	}
 	var attempts int
-	if err := p.pool.QueryRow(ctx, incrementIncidentAttemptsSQL, id).Scan(&attempts); err != nil {
+	err := p.pool.QueryRow(ctx, incrementIncidentAttemptsSQL, id).Scan(&attempts)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Either another consumer holds it or it has already concluded. Both are
+		// "not mine to run", and the caller treats them the same way.
+		return 0, fmt.Errorf("store: increment incident attempts: %w", ErrConflict)
+	}
+	if err != nil {
 		return 0, classify("store: increment incident attempts", err)
 	}
 	return attempts, nil

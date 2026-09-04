@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"math"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -267,7 +268,11 @@ func (p *Pool) dispatch(ctx context.Context, consumer string, msg domain.QueueMe
 			p.deps.Log.Error("recovered a panic while handling a message",
 				"consumer", consumer, "incident_id", msg.IncidentID,
 				"panic", fmt.Sprint(rec), "stack", string(debug.Stack()))
-			p.park(ctx, msg, fmt.Sprintf("panic: %v", rec))
+			// park runs inside this deferred function, so a panic it raises is
+			// covered by nothing and unwinds the consumer goroutine — taking
+			// the process with it. The recovery path must be at least as
+			// robust as the path it recovers.
+			p.safePark(ctx, consumer, msg, fmt.Sprintf("panic: %v", rec))
 		}
 	}()
 
@@ -354,7 +359,16 @@ func (p *Pool) Handle(ctx context.Context, msg domain.QueueMessage) error {
 		return fmt.Errorf("worker: incident %s: %w", incidentID, err)
 	}
 
+	// The increment is the claim. A conflict means another consumer already owns
+	// this incident — which is what a duplicate delivery looks like, and
+	// at-least-once transports produce them routinely: a failed ack, a reclaim
+	// of a merely-slow message, a rolling deploy. Acking is correct: the work is
+	// being done, just not here.
 	attempt, err := p.deps.Store.IncrementIncidentAttempts(ctx, incidentID)
+	if errors.Is(err, store.ErrConflict) {
+		p.count("worker.claim_lost")
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("worker: counting attempts for %s: %w", incidentID, err)
 	}
@@ -495,6 +509,12 @@ func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain
 		if err := p.deps.Executor.NotifyPreDebit(ctx, cmd); err != nil {
 			return fmt.Errorf("worker: pre-debit notice for %s: %w", incident.ID, err)
 		}
+		// Recording it is not bookkeeping, it is the point. The gatekeeper's
+		// RBI_PRE_DEBIT_NOTICE rule reads PreDebitNotifiedAt to decide whether
+		// the obligation is satisfied, so a notice that is delivered and not
+		// recorded is re-sent on every redelivery: the payer gets the same
+		// warning repeatedly and the rule can never be satisfied.
+		p.recordPreDebitNotice(ctx, incident, cmd)
 		p.audit(ctx, domain.AuditPreDebitNotice, incident.ID, map[string]any{
 			"debit_after": cmd.ExecuteAfter.UTC().Format(time.RFC3339),
 		})
@@ -590,10 +610,21 @@ func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain
 		p.count("worker.recovered")
 	}
 	if !rec.Succeeded && cmd.AttemptNumber < cmd.MaxAttempts {
-		// More attempts remain; the incident stays open for the next one.
+		// More attempts remain, so the incident stays open — but "open" has to
+		// mean something. Writing SCHEDULED through UpdateIncidentState leaves
+		// scheduled_for NULL, and the sweeper only claims rows that have a due
+		// time, so the incident would sit in a state whose name promises a
+		// retry that nothing can ever deliver. Every attempt past the first was
+		// unreachable through this path.
+		//
+		// It is re-armed as due immediately rather than with a backoff: the
+		// next pass through the gatekeeper is what computes the real delay, and
+		// duplicating that arithmetic here is how the two drift apart.
 		next = domain.IncidentScheduled
-	}
-	if err := p.deps.Store.UpdateIncidentState(ctx, incident.ID, next); err != nil {
+		if err := p.deps.Store.ScheduleIncident(ctx, incident.ID, p.deps.Clock.Now()); err != nil {
+			return fmt.Errorf("worker: re-arming incident %s: %w", incident.ID, err)
+		}
+	} else if err := p.deps.Store.UpdateIncidentState(ctx, incident.ID, next); err != nil {
 		return fmt.Errorf("worker: updating incident %s: %w", incident.ID, err)
 	}
 	if next.Terminal() {
@@ -690,6 +721,14 @@ func (p *Pool) dueAt(cmd domain.SanitizedCommand) time.Time {
 	if p.cfg.DemoTimeScale <= 1 {
 		return cmd.ExecuteAfter
 	}
+	// A regulatory delay is not a wait, it is a rule. RBI's cooling window is a
+	// legal minimum, so compressing it would make the demonstration break the
+	// law it claims to enforce — and this function's own contract says the
+	// decision is never altered. The gatekeeper names the rules it applied, so
+	// the command says which of its delays are floors.
+	if regulatoryDelay(cmd) {
+		return cmd.ExecuteAfter
+	}
 	now := p.deps.Clock.Now()
 	wait := cmd.ExecuteAfter.Sub(now)
 	if wait <= 0 {
@@ -703,6 +742,65 @@ func (p *Pool) dueAt(cmd domain.SanitizedCommand) time.Time {
 		compressed = time.Second
 	}
 	return now.Add(compressed)
+}
+
+// regulatoryDelay reports whether a command's delay came from a rule rather
+// than from a backoff heuristic.
+//
+// It reads the invariant names the gatekeeper attached, so the two cannot
+// disagree: a rule added there is honoured here without this list being
+// updated, provided the name carries the RBI prefix the regulatory rules share.
+func regulatoryDelay(cmd domain.SanitizedCommand) bool {
+	if cmd.PreDebitNotificationNeeded {
+		return true
+	}
+	for _, name := range cmd.AppliedInvariants {
+		if strings.HasPrefix(name, "RBI_") {
+			return true
+		}
+	}
+	return false
+}
+
+// safePark parks a message from inside a recover block.
+//
+// The ordinary park is called from a deferred recover, where a second panic is
+// covered by nothing and unwinds the consumer goroutine — which ends the
+// process. A recovery path that can itself crash the process is not a recovery
+// path.
+func (p *Pool) safePark(ctx context.Context, consumer string, msg domain.QueueMessage, cause string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			p.count("worker.dead_letter_panic")
+			p.deps.Log.Error("the dead-letter path panicked; the message is left for redelivery",
+				"consumer", consumer, "incident_id", msg.IncidentID, "panic", fmt.Sprint(rec))
+		}
+	}()
+	p.park(ctx, msg, cause)
+}
+
+// recordPreDebitNotice advances the mandate so the notice counts.
+//
+// Failures are logged rather than returned. The notice has already been
+// delivered at this point, and refusing the debit because the bookkeeping
+// failed would strand a payment the payer has already been warned about; the
+// gatekeeper re-checks the obligation on the next pass regardless.
+func (p *Pool) recordPreDebitNotice(ctx context.Context, incident domain.Incident, cmd domain.SanitizedCommand) {
+	if incident.SubscriptionID == "" {
+		return
+	}
+	m, err := p.deps.Store.GetMandate(ctx, incident.SubscriptionID)
+	if err != nil {
+		p.deps.Log.Warn("could not load a mandate to record its pre-debit notice",
+			"subscription_id", incident.SubscriptionID, "error", err)
+		return
+	}
+	now := p.deps.Clock.Now()
+	m.PreDebitNotifiedAt = &now
+	if err := p.deps.Store.SaveMandate(ctx, m); err != nil {
+		p.deps.Log.Warn("could not record a pre-debit notice; it will be re-sent",
+			"subscription_id", incident.SubscriptionID, "error", err)
+	}
 }
 
 // sweepDueLoop returns deferred recoveries to the queue when they fall due.
