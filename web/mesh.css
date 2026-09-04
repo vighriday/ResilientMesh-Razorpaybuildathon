@@ -1,0 +1,392 @@
+/* ResilientMesh interface styles.
+   Served same-origin as a separate file so the Content-Security-Policy can be
+   default-src 'self' with no 'unsafe-inline' anywhere. No external fonts or
+   images: the console must work on an air-gapped machine. */
+
+:root {
+  --indigo: #1b2a6b;
+  --indigo-deep: #131d4a;
+  --slate: #2e3a4e;
+  --enamel: #fffdf8;
+  --paper: #f2f3f6;
+  --rule: #d9dde5;
+  --muted: #6b7686;
+
+  --signal-green: #0f8a5f;
+  --signal-amber: #e8a33d;
+  --signal-red: #c2352b;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, "SF Mono", Menlo, monospace;
+
+  --step: 8px;
+  --radius: 3px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal-amber);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ==========================================================================
+   Checkout — customer facing, calm, single column
+   ========================================================================== */
+
+body.checkout {
+  background: var(--indigo-deep);
+  color: var(--slate);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 100vh;
+  padding: calc(var(--step) * 5) var(--step);
+}
+
+.card {
+  width: 100%;
+  max-width: 452px;
+  background: var(--enamel);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18), 0 18px 48px rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+}
+
+.merchant {
+  padding: calc(var(--step) * 2.5) calc(var(--step) * 3) 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.amount {
+  padding: 2px calc(var(--step) * 3) calc(var(--step) * 2.5);
+  font-size: 40px;
+  font-weight: 600;
+  color: var(--indigo);
+  line-height: 1.1;
+}
+
+.order-ref {
+  padding: 0 calc(var(--step) * 3) calc(var(--step) * 2.5);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: -6px;
+}
+
+/* The signal strip: the rails, as lamps on a track. This is the element that
+   carries the whole idea, so it gets the visual weight and nothing else does. */
+.track {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  padding: calc(var(--step) * 2) calc(var(--step) * 3);
+}
+
+.track-rails {
+  display: flex;
+  gap: calc(var(--step) * 3);
+  position: relative;
+}
+
+.track-rails::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 5px;
+  height: 1px;
+  background: var(--rule);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 12px;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+  position: relative;
+}
+
+.lamp {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #c8cdd6;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: background 220ms ease, box-shadow 220ms ease;
+}
+
+.rail[data-state="active"] .lamp {
+  background: var(--signal-green);
+  box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.18);
+}
+
+.rail[data-state="failed"] .lamp {
+  background: var(--signal-red);
+  box-shadow: 0 0 0 3px rgba(194, 53, 43, 0.18);
+}
+
+.rail[data-state="active"] { color: var(--indigo); font-weight: 600; }
+.rail[data-state="failed"] { color: var(--signal-red); }
+
+/* The morph moment. One orchestrated sequence, nothing else on the page moves. */
+@keyframes throw-switch {
+  0%   { transform: translateX(0); opacity: 1; }
+  45%  { transform: translateX(-10px); opacity: 0; }
+  55%  { transform: translateX(10px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+.form.switching { animation: throw-switch 520ms ease both; }
+
+.notice {
+  margin: 0;
+  padding: calc(var(--step) * 2) calc(var(--step) * 3);
+  background: #fdf4e3;
+  border-bottom: 1px solid #f0dcb4;
+  color: #6d4c14;
+  font-size: 13.5px;
+  line-height: 1.5;
+  display: none;
+}
+
+.notice.shown { display: block; }
+
+.notice strong { color: #4d3508; font-weight: 600; }
+
+.form {
+  padding: calc(var(--step) * 3);
+}
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  color: var(--slate);
+  margin-bottom: 6px;
+}
+
+.field {
+  width: 100%;
+  padding: 11px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--slate);
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.field:focus { border-color: var(--indigo); }
+
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+.pay {
+  width: 100%;
+  margin-top: calc(var(--step) * 2.5);
+  padding: 13px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--enamel);
+  background: var(--indigo);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.pay:hover { background: #16225a; }
+.pay:disabled { background: #9aa2b4; cursor: not-allowed; }
+
+.status {
+  padding: calc(var(--step) * 1.5) calc(var(--step) * 3);
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--step);
+}
+
+.status-live { display: flex; align-items: center; gap: 6px; }
+
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--signal-green);
+}
+
+.disconnected .pulse { background: var(--muted); }
+
+/* ==========================================================================
+   Console — operator facing, dense, dark panel
+   ========================================================================== */
+
+body.console {
+  background: var(--indigo-deep);
+  color: #dfe4ee;
+  font-size: 13.5px;
+  padding: 0;
+}
+
+.console-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--step) * 3);
+  flex-wrap: wrap;
+  padding: calc(var(--step) * 2) calc(var(--step) * 3);
+  border-bottom: 1px solid #2b3766;
+  background: var(--indigo);
+}
+
+.console-head h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--enamel);
+}
+
+.head-stat { font-size: 12.5px; color: #a9b4cc; }
+.head-stat b { color: var(--enamel); font-weight: 600; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 1px;
+  background: #2b3766;
+}
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: #172352;
+  padding: calc(var(--step) * 2) calc(var(--step) * 2.5);
+  min-width: 0;
+}
+
+.panel h2 {
+  margin: 0 0 calc(var(--step) * 1.5);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #b9c4dd;
+}
+
+.panel-wide { grid-column: 1 / -1; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+th {
+  text-align: left;
+  font-weight: 500;
+  color: #8e9bba;
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid #2b3766;
+  white-space: nowrap;
+}
+
+td {
+  padding: 6px 8px 6px 0;
+  border-bottom: 1px solid #223063;
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+
+.scroll { max-height: 340px; overflow-y: auto; overflow-x: auto; }
+
+.lamp-row { display: flex; align-items: center; gap: 7px; }
+
+.state-CLOSED   { color: var(--signal-green); }
+.state-HALF_OPEN { color: var(--signal-amber); }
+.state-OPEN     { color: var(--signal-red); }
+
+.state-CLOSED .lamp    { background: var(--signal-green); }
+.state-HALF_OPEN .lamp { background: var(--signal-amber); }
+.state-OPEN .lamp      { background: var(--signal-red); }
+
+.tier {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--radius);
+  font-size: 11.5px;
+  border: 1px solid currentColor;
+}
+
+.tier-LIVE      { color: var(--signal-green); }
+.tier-REPLAY    { color: #7fa8ff; }
+.tier-HEURISTIC { color: var(--signal-amber); }
+.tier-SKIPPED   { color: var(--muted); }
+
+.btn {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 13px;
+  color: var(--indigo-deep);
+  background: var(--enamel);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.btn:hover { background: #ece7d8; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.verdict {
+  margin-top: calc(var(--step) * 1.5);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.5;
+  display: none;
+}
+
+.verdict.shown { display: block; }
+.verdict.ok   { background: rgba(15, 138, 95, 0.14); border: 1px solid var(--signal-green); color: #7fe0b8; }
+.verdict.bad  { background: rgba(194, 53, 43, 0.16); border: 1px solid var(--signal-red); color: #ffb3ac; }
+
+.hash { color: #7f8db0; }
+
+.empty { color: #7f8db0; padding: calc(var(--step) * 2) 0; }
+
+.kv { display: flex; justify-content: space-between; gap: var(--step); padding: 4px 0; }
+.kv span { color: #8e9bba; }
+.kv b { font-weight: 600; color: var(--enamel); }

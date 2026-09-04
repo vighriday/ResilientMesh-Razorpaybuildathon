@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ResilientMesh operations</title>
+<link rel="stylesheet" href="/mesh.css">
+</head>
+<body class="console">
+
+<header class="console-head">
+  <h1>ResilientMesh operations</h1>
+  <span class="head-stat">Incidents <b class="num" id="stat-incidents">&mdash;</b></span>
+  <span class="head-stat">Recovered <b class="num" id="stat-recovered">&mdash;</b></span>
+  <span class="head-stat">Outbox pending <b class="num" id="stat-outbox">&mdash;</b></span>
+  <span class="head-stat">Queue lag <b class="num" id="stat-lag">&mdash;</b></span>
+  <span class="head-stat">Dead letters <b class="num" id="stat-dlq">&mdash;</b></span>
+  <span class="head-stat">Live sessions <b class="num" id="stat-sessions">&mdash;</b></span>
+  <span class="head-stat" id="stat-link">Connecting</span>
+</header>
+
+<section class="panel panel-wide" id="auth" hidden>
+  <h2>Operations token required</h2>
+  <p class="empty">The console reads the operations API, which is closed by default. Paste the token printed when the system started.</p>
+  <label class="field-label" for="token-input">Operations token</label>
+  <input class="field" id="token-input" type="password" autocomplete="off" spellcheck="false">
+  <p><button class="btn" id="token-save" type="button">Connect</button></p>
+</section>
+
+<div class="grid" id="main" hidden>
+
+  <section class="panel">
+    <h2>Issuer health, rolling 5 minutes</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Issuer</th><th>Success</th><th>Samples</th><th>Breaker</th></tr>
+        </thead>
+        <tbody id="telemetry-body">
+          <tr><td colspan="4" class="empty">No traffic yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:20px">Inference source</h2>
+    <div id="tiers"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Incidents</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Payment</th><th>Issuer</th><th>Error</th><th>Amount</th><th>State</th><th>Source</th></tr>
+        </thead>
+        <tbody id="incident-body">
+          <tr><td colspan="6" class="empty">No incidents yet. Start the outage script to generate traffic.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel panel-wide">
+    <h2>Audit chain</h2>
+    <p>
+      <button class="btn" id="verify" type="button">Verify chain</button>
+    </p>
+    <p class="verdict" id="verdict" role="status" aria-live="polite"></p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Seq</th><th>Event</th><th>Incident</th><th>Actor</th><th>Hash</th></tr>
+        </thead>
+        <tbody id="audit-body">
+          <tr><td colspan="5" class="empty">Chain is empty.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script src="/console.js"></script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+# Production-shaped topology: separate edge, worker, datastores, and simulator.
+#
+# This is the optional path. `go run ./cmd/mesh` boots the same code with an
+# embedded PostgreSQL and an in-process RESP server and needs none of this.
+# Both paths share one code path — pgx and go-redis — so nothing here exercises
+# behaviour the single-binary mode does not.
+#
+#   cp .env.example .env    # then set MESH_WEBHOOK_SECRET and MESH_OPS_TOKEN
+#   docker compose up --build
+
+name: resilientmesh
+
+x-mesh-env: &mesh-env
+  MESH_INFRA_MODE: external
+  MESH_PG_DSN: postgres://mesh:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/mesh?sslmode=disable
+  MESH_REDIS_ADDR: redis:6379
+  MESH_WEBHOOK_SECRET: ${MESH_WEBHOOK_SECRET:?set MESH_WEBHOOK_SECRET in .env}
+  MESH_OPS_TOKEN: ${MESH_OPS_TOKEN:?set MESH_OPS_TOKEN in .env}
+  MESH_RAZORPAY_BASE_URL: http://simulator:8081
+  MESH_LLM_BASE_URL: ${MESH_LLM_BASE_URL:-}
+  MESH_LLM_API_KEY: ${MESH_LLM_API_KEY:-}
+  MESH_LLM_MODEL: ${MESH_LLM_MODEL:-llama-3.3-70b-versatile}
+  MESH_LOG_LEVEL: ${MESH_LOG_LEVEL:-info}
+
+services:
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: mesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: mesh
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -U and -d are required: without them pg_isready reports the socket is
+      # up before the database itself accepts connections, and dependents start
+      # into a connection refused.
+      test: ["CMD-SHELL", "pg_isready -U mesh -d mesh"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: '2.0', memory: 1G }
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Streams are the durability boundary between the relay and the workers,
+    # and the outbox is the real durable record, so an eviction policy that
+    # silently drops stream entries would hide work rather than lose it. noeviction
+    # makes memory pressure a loud error instead of a quiet one.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 768M }
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/simulator"]
+    environment:
+      <<: *mesh-env
+      MESH_SIMULATOR_ADDR: ":8081"
+      MESH_SIMULATOR_TARGET: http://api:8080
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/api"]
+    environment:
+      <<: *mesh-env
+      MESH_HTTP_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/meshctl", "health", "--endpoint", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { cpus: '2.0', memory: 512M }
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/usr/local/bin/worker"]
+    environment:
+      <<: *mesh-env
+      MESH_WORKER_CONCURRENCY: "8"
+    depends_on:
+      api:
+        condition: service_healthy
+    # Two replicas are the point, not redundancy theatre: they prove
+    # SELECT ... FOR UPDATE SKIP LOCKED and the advisory-locked audit append
+    # hold under genuine concurrency rather than in a single-process test.
+    deploy:
+      replicas: 2
+      resources:
+        limits: { cpus: '1.0', memory: 384M }
+    restart: unless-stopped
+
+  dashboard:
+    image: python:3.12-slim
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir -q streamlit plotly pandas numpy &&
+             streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true"
+    environment:
+      MESH_API_BASE: http://api:8080
+      MESH_OPS_TOKEN: ${MESH_OPS_TOKEN}
+    volumes:
+      - ./dashboard:/app/dashboard:ro
+      - ./eval:/app/eval:ro
+      - ./artifacts:/app/artifacts
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

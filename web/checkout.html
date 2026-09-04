@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Checkout — Anantara Textiles</title>
+<link rel="stylesheet" href="/mesh.css">
+</head>
+<body class="checkout">
+
+<main class="card">
+  <p class="merchant">Anantara Textiles</p>
+  <p class="amount num" id="amount">&#8377;&nbsp;0.00</p>
+  <p class="order-ref num" id="order-ref">&nbsp;</p>
+
+  <p class="notice" id="notice" role="status" aria-live="polite"></p>
+
+  <section class="track" aria-label="Payment method">
+    <div class="track-rails" id="rails"></div>
+  </section>
+
+  <section class="form" id="form">
+    <label class="field-label" for="instrument" id="instrument-label">Choose your bank</label>
+    <input class="field" id="instrument" name="instrument" autocomplete="off" spellcheck="false">
+    <p class="hint" id="hint"></p>
+    <button class="pay" id="pay" type="button">Pay</button>
+  </section>
+
+  <footer class="status" id="status">
+    <span class="status-live"><span class="pulse"></span><span id="link-state">Connecting</span></span>
+    <span class="num" id="seq">&nbsp;</span>
+  </footer>
+</main>
+
+<script src="/checkout.js"></script>
+</body>
+</html>
