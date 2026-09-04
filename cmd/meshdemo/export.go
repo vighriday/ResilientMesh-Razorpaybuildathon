@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hriday/razorpay-resilient-mesh/internal/attest"
 	"github.com/hriday/razorpay-resilient-mesh/internal/config"
 	"github.com/hriday/razorpay-resilient-mesh/internal/domain"
 	"github.com/hriday/razorpay-resilient-mesh/internal/store"
@@ -49,6 +50,10 @@ type dossier struct {
 	Invariants []invariantRow `json:"invariants"`
 	Narration  []record       `json:"narration"`
 	Acts       []actMeta      `json:"acts"`
+	// Vectors are inputs the server ran through the real gatekeeper, with the
+	// answers it gave. The page reruns them through the WebAssembly build of the
+	// same package so a reader can see the two agree rather than be told they do.
+	Vectors []gateVector `json:"gate_vectors"`
 
 	// secrets never leave this process. It is lower-case so it cannot be
 	// marshalled: a redaction list that serialises itself would publish the
@@ -114,6 +119,46 @@ type caseFile struct {
 	Timeline []caseEvent           `json:"timeline"`
 	Attempts []attemptView         `json:"attempts"`
 	Mandate  *domain.MandateRecord `json:"mandate,omitempty"`
+	// Evidence is this one payment's history, extracted so it can travel on its
+	// own. It is what a merchant would hand a bank during a chargeback dispute:
+	// enough to prove what was decided and that the record is genuine, and
+	// nothing about any other payment.
+	Evidence *evidencePack `json:"evidence,omitempty"`
+}
+
+// evidencePack is a self-contained, offline-checkable record of one payment.
+//
+// Its size is the point. Verifying an entry against the hash chain means
+// walking every entry before it, so proving one payment would mean handing over
+// the whole ledger. Each inclusion proof here is about log2(n) sibling hashes
+// instead, which for a ledger of a few hundred entries is roughly ten, and the
+// siblings are digests that reveal nothing about the entries they summarise.
+type evidencePack struct {
+	Schema     string          `json:"schema"`
+	PaymentID  string          `json:"payment_id"`
+	IncidentID string          `json:"incident_id"`
+	MerkleRoot string          `json:"merkle_root"`
+	TreeSize   int             `json:"tree_size"`
+	Entries    []evidenceEntry `json:"entries"`
+	// ProofBytes and LedgerBytes let a reader see the trade the tree buys
+	// rather than take the claim on faith.
+	ProofBytes  int    `json:"proof_bytes"`
+	LedgerBytes int    `json:"full_ledger_bytes"`
+	HowToVerify string `json:"how_to_verify"`
+}
+
+type evidenceEntry struct {
+	Seq        int64        `json:"seq"`
+	Kind       string       `json:"kind"`
+	Actor      string       `json:"actor"`
+	At         string       `json:"at"`
+	AtUnixNano string       `json:"at_unix_nano"`
+	IncidentID string       `json:"incident_id"`
+	DetailB64  string       `json:"detail_b64"`
+	PrevHash   string       `json:"prev_hash"`
+	Hash       string       `json:"hash"`
+	Summary    string       `json:"summary"`
+	Proof      attest.Proof `json:"inclusion_proof"`
 }
 
 type caseEvent struct {
@@ -145,9 +190,14 @@ type attemptView struct {
 // same class of reason: it exceeds 2^53, so a JSON number would be silently
 // rounded by every reader that parses into a float.
 type chainExport struct {
-	Genesis    string       `json:"genesis"`
-	Count      int          `json:"count"`
-	Head       string       `json:"head"`
+	Genesis string `json:"genesis"`
+	Count   int    `json:"count"`
+	Head    string `json:"head"`
+	// MerkleRoot commits to the same entries as the chain, in one 32-byte
+	// value. The chain proves the ledger has not been rewritten; the root is
+	// what lets a single entry be proved to a party who is not allowed to see
+	// the rest of it.
+	MerkleRoot string       `json:"merkle_root"`
 	Valid      bool         `json:"valid"`
 	Truncated  bool         `json:"truncated"`
 	Algorithm  string       `json:"algorithm"`
@@ -247,6 +297,24 @@ func captureChain(ctx context.Context, pg *store.Postgres) (chainExport, error) 
 		return chainExport{}, fmt.Errorf("exporting the audit chain: %w", err)
 	}
 	out.Head = prev
+
+	// The Merkle root is derived from the same digests the chain links, so the
+	// two commitments cannot disagree about which ledger they describe.
+	if len(out.Entries) > 0 {
+		leaves := make([][32]byte, 0, len(out.Entries))
+		for _, e := range out.Entries {
+			h, hashErr := attest.ParseHash(e.Hash)
+			if hashErr != nil {
+				return chainExport{}, fmt.Errorf("committing the ledger: %w", hashErr)
+			}
+			leaves = append(leaves, h)
+		}
+		root, rootErr := attest.New(leaves).RootHex()
+		if rootErr != nil {
+			return chainExport{}, fmt.Errorf("committing the ledger: %w", rootErr)
+		}
+		out.MerkleRoot = root
+	}
 	return out, nil
 }
 
@@ -551,4 +619,83 @@ func refreshExport(ctx context.Context, d *dossier, pg *store.Postgres) error {
 			"benchmark in eval/ is the comparison that controls for incident mix",
 	}
 	return nil
+}
+
+// buildEvidence extracts one payment's history as a bundle that can be checked
+// without the rest of the ledger.
+//
+// The tree is built over every entry's chain hash, so the root commits to
+// exactly what the chain commits to, and the proofs are cut against that same
+// tree. A verifier therefore does two independent things: it recomputes each
+// entry's digest from the bytes carried here, which catches an edited record,
+// and it walks the sibling path to the published root, which catches a record
+// that was never in the ledger at all. Neither check needs the database.
+func buildEvidence(chain chainExport, incidentID, paymentID string) (*evidencePack, error) {
+	if len(chain.Entries) == 0 {
+		return nil, nil
+	}
+	leaves := make([][32]byte, 0, len(chain.Entries))
+	for _, e := range chain.Entries {
+		h, err := attest.ParseHash(e.Hash)
+		if err != nil {
+			return nil, fmt.Errorf("building the evidence tree: %w", err)
+		}
+		leaves = append(leaves, h)
+	}
+	tree := attest.New(leaves)
+	root, err := tree.RootHex()
+	if err != nil {
+		return nil, fmt.Errorf("building the evidence tree: %w", err)
+	}
+
+	pack := &evidencePack{
+		Schema:     "resilientmesh.evidence.v1",
+		PaymentID:  paymentID,
+		IncidentID: incidentID,
+		MerkleRoot: root,
+		TreeSize:   tree.Size(),
+		HowToVerify: "For each entry: recompute its digest from the fields below, " +
+			"absorbing each length-prefixed in the order seq, incident_id, kind, " +
+			"actor, detail, at_unix_nano, prev_hash; then fold the inclusion proof " +
+			"path into it and compare the result with merkle_root.",
+	}
+	for i, e := range chain.Entries {
+		if e.IncidentID != incidentID {
+			continue
+		}
+		proof, err := tree.ProofFor(i)
+		if err != nil {
+			return nil, fmt.Errorf("cutting an inclusion proof for entry %d: %w", e.Seq, err)
+		}
+		pack.Entries = append(pack.Entries, evidenceEntry{
+			Seq: e.Seq, Kind: e.Kind, Actor: e.Actor, At: e.At,
+			AtUnixNano: e.AtUnixNano, IncidentID: e.IncidentID,
+			DetailB64: e.DetailB64, PrevHash: e.PrevHash, Hash: e.Hash,
+			Summary: e.Summary, Proof: proof,
+		})
+	}
+	if len(pack.Entries) == 0 {
+		return nil, nil
+	}
+
+	// Measured rather than asserted, because the size claim is the argument.
+	if b, err := json.Marshal(pack); err == nil {
+		pack.ProofBytes = len(b)
+	}
+	if b, err := json.Marshal(chain.Entries); err == nil {
+		pack.LedgerBytes = len(b)
+	}
+	return pack, nil
+}
+
+// humanBytes renders a byte count the way a reader thinks about one.
+func humanBytes(n int) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f kB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
 }

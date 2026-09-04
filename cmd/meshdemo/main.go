@@ -472,6 +472,33 @@ func demo(ctx context.Context, opts options, t *transcript) (*dossier, error) {
 	}
 	d.Chain = chain
 
+	// One payment's history, cut so it can travel without the rest of the
+	// ledger. This is the shape a merchant would hand a bank during a dispute,
+	// and the reason the ledger carries a Merkle root beside its chain.
+	pack, err := buildEvidence(chain, d.Case.Incident.ID, d.Case.Incident.PaymentID)
+	if err != nil {
+		return nil, err
+	}
+	d.Case.Evidence = pack
+
+	// Conformance vectors for the browser build of the gatekeeper. Generated
+	// here, from this binary, so the page compares two builds of one package
+	// rather than a page against a claim.
+	vectors, err := buildVectors()
+	if err != nil {
+		return nil, err
+	}
+	d.Vectors = vectors
+	if pack != nil {
+		t.ok(fmt.Sprintf("Evidence pack for %s: %d entries provable in %s "+
+			"against a %d-entry ledger",
+			short(pack.PaymentID), len(pack.Entries),
+			humanBytes(pack.ProofBytes), pack.TreeSize))
+		t.note("Each entry carries an inclusion proof of about ten sibling hashes " +
+			"rather than the ledger it came from, so the bundle proves this payment " +
+			"and discloses nothing about any other.")
+	}
+
 	target := before.Entries / 2
 	if target < 1 {
 		target = 1
