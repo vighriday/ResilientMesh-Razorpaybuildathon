@@ -116,6 +116,7 @@ const (
 	envRazorpayKeySecret = EnvPrefix + "RAZORPAY_KEY_SECRET"
 	envDemoMode          = EnvPrefix + "DEMO_MODE"
 	envSeed              = EnvPrefix + "SEED"
+	envDemoTimeScale     = EnvPrefix + "DEMO_TIME_SCALE"
 )
 
 // Input bounds. Environment variables are external input on a machine that may
@@ -298,6 +299,7 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	c.RazorpayKeySecret = l.text(envRazorpayKeySecret, c.RazorpayKeySecret, maxSecretLen)
 	c.DemoMode = l.boolean(envDemoMode, c.DemoMode)
 	c.Seed = l.integer64(envSeed, c.Seed)
+	c.DemoTimeScale = l.float(envDemoTimeScale, c.DemoTimeScale)
 
 	errs := l.errs
 	if len(errs) == 0 {
@@ -391,6 +393,10 @@ func (c *Config) Validate() error {
 	checkInt(&errs, envWorkerConcurrency, c.WorkerConcurrency, 1, 256)
 	checkInt(&errs, envMaxSessions, c.MaxSessions, 1, 1000000)
 	checkFloat(&errs, envBreakerTripRate, c.BreakerTripRate, 0, 1)
+	// A factor below one would stretch a delay rather than compress it,
+	// which no caller wants and which would silently make a regulatory
+	// window longer than the gatekeeper computed.
+	checkFloat(&errs, envDemoTimeScale, c.DemoTimeScale, 1, 10000)
 
 	checkPaisa(&errs, "gateway_fee_per_attempt_paisa", c.CostModel.GatewayFeePerAttemptPaisa)
 	checkPaisa(&errs, "comms_cost_per_message_paisa", c.CostModel.CommsCostPerMessagePaisa)
@@ -693,6 +699,7 @@ func (c Config) logAttrs() []slog.Attr {
 		slog.String("cassette_dir", c.CassetteDir),
 		slog.Int("max_attempts", c.MaxAttempts),
 		slog.Float64("breaker_trip_rate", c.BreakerTripRate),
+		slog.Float64("demo_time_scale", c.DemoTimeScale),
 		slog.Int("breaker_min_samples", c.BreakerMinSamples),
 		slog.Duration("breaker_cooldown", c.BreakerCooldown),
 		slog.Duration("telemetry_window", c.TelemetryWindow),
