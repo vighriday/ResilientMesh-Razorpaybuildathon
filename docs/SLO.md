@@ -21,7 +21,7 @@ Two kinds of promise live here, and conflating them is how payment systems get i
 | No audit entry can be silently altered | Hash chain, advisory-locked append | Tamper test names the exact broken sequence |
 | No unverified webhook produces an effect | HMAC before parse, before any write | Signature test matrix |
 
-Why these are invariants rather than objectives: each corresponds to money moving wrongly or a regulatory breach. "99.9% of debits respect the cooling window" is not a weaker version of compliance — it is non-compliance with extra steps.
+Why these are invariants rather than objectives: each corresponds to money moving wrongly or a regulatory breach. "99.9% of debits respect the cooling window" is not a weaker version of compliance, it is non-compliance with extra steps.
 
 ---
 
@@ -37,11 +37,11 @@ Measured at the edge over a rolling 28-day window.
 | Outbox drain lag, p95 | < 5 s | 5% over | The gap between durable and actionable. Above this, in-session healing misses the window entirely |
 | End-to-end heal, p95 | < 3 s from webhook to SSE frame | 5% over | The customer is still on the page for a handful of seconds. Beyond that the session is gone and healing is pointless |
 | Recovery decision correctness | ≥ 95% of ambiguous incidents diagnosed by `LIVE` or `REPLAY` | 5% | Falling to `HEURISTIC` is a real quality drop, not a neutral fallback |
-| Dead-letter rate | < 0.1% of incidents | — | Above this the DLQ has stopped being an exception path |
+| Dead-letter rate | < 0.1% of incidents |, | Above this the DLQ has stopped being an exception path |
 
 ### Deliberately not an objective
 
-**Recovery rate.** It depends on issuer behaviour we do not control, and targeting it creates pressure to retry more aggressively — which trades a metric against the compliance invariants. Net recovered value is *reported* and *optimised*, never committed to as an SLO.
+**Recovery rate.** It depends on issuer behaviour we do not control, and targeting it creates pressure to retry more aggressively, which trades a metric against the compliance invariants. Net recovered value is *reported* and *optimised*, never committed to as an SLO.
 
 ---
 
@@ -58,6 +58,6 @@ Measured at the edge over a rolling 28-day window.
 
 ## Measurement
 
-All figures come from in-process metrics on `/api/v1/ops/metrics`, not from logs. Latency uses fixed exponential buckets, so percentiles are bucket-bounded estimates — accurate enough to detect regressions, and honest about it rather than implying precision the histogram cannot give.
+All figures come from in-process metrics on `/api/v1/ops/metrics`, not from logs. Latency uses fixed exponential buckets, so percentiles are bucket-bounded estimates, accurate enough to detect regressions, and honest about it rather than implying precision the histogram cannot give.
 
 Capacity figures backing these targets are measured, not assumed. See [CAPACITY.md](CAPACITY.md).

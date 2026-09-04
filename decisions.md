@@ -4,7 +4,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-001 — Go for the edge, Python only for evaluation
+## ADR-001, Go for the edge, Python only for evaluation
 
 **Decision.** Webhook ingestion, HMAC verification, the SSE multiplexer, the outbox relay, and the worker pool are Go. Chaos injection, the NRCV benchmark, and the analytical dashboard are Python.
 
@@ -16,7 +16,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-002 — pgx over GORM
+## ADR-002, pgx over GORM
 
 **Decision.** `jackc/pgx/v5` directly, with hand-written SQL.
 
@@ -28,11 +28,11 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-003 — `log/slog` over zap, behind a redacting handler
+## ADR-003, `log/slog` over zap, behind a redacting handler
 
 **Decision.** Standard library structured logging, wrapped in a handler that redacts secret-shaped keys and truncates oversized values.
 
-**Why.** The requirement is not "fast logging", it is "a payment system must not be able to log a webhook signature, an API key, a VPA, or a card reference — even by accident, even in a future call site nobody reviews". That is a property of the handler, not of the call sites, so it belongs in the logging layer. slog supports this cleanly and removes a dependency from a security-sensitive path.
+**Why.** The requirement is not "fast logging", it is "a payment system must not be able to log a webhook signature, an API key, a VPA, or a card reference, even by accident, even in a future call site nobody reviews". That is a property of the handler, not of the call sites, so it belongs in the logging layer. slog supports this cleanly and removes a dependency from a security-sensitive path.
 
 **Rejected.** zap (an extra dependency in the security path for throughput we do not need at this volume), plain `log` (unstructured, unfilterable).
 
@@ -40,7 +40,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-004 — Transactional outbox, not a try/catch dual write
+## ADR-004, Transactional outbox, not a try/catch dual write
 
 **Decision.** The webhook handler writes the incident row and the outbox row inside one PostgreSQL transaction. A separate relay drains the outbox into the Redis stream with at-least-once delivery.
 
@@ -48,31 +48,31 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 **Rejected.** Try/catch around both calls (does not survive process death); 2PC (operationally unjustifiable here); change-data-capture (correct, but requires infrastructure a reviewer cannot run in one command).
 
-**Consequence.** At-least-once delivery, so every consumer must be idempotent. Accepted deliberately — see ADR-005.
+**Consequence.** At-least-once delivery, so every consumer must be idempotent. Accepted deliberately, see ADR-005.
 
 ---
 
-## ADR-005 — `X-Razorpay-Event-Id` as the idempotency key, enforced by a UNIQUE index
+## ADR-005, `X-Razorpay-Event-Id` as the idempotency key, enforced by a UNIQUE index
 
 **Decision.** The event id is stored `UNIQUE` on `incidents`. A duplicate delivery returns `200 {"status":"duplicate_ignored"}` and creates no new outbox row.
 
-**Why.** Razorpay retries webhooks, and our own outbox is at-least-once. Deduplicating in application code is a check-then-act race under concurrency: two workers both read "not present" and both insert. A unique constraint makes the database the serialisation point, which is the only component that can arbitrate correctly. Returning 200 rather than 409 is deliberate — a duplicate is a successfully-handled delivery from the sender's point of view, and a non-2xx would cause the sender to retry a message we have already processed.
+**Why.** Razorpay retries webhooks, and our own outbox is at-least-once. Deduplicating in application code is a check-then-act race under concurrency: two workers both read "not present" and both insert. A unique constraint makes the database the serialisation point, which is the only component that can arbitrate correctly. Returning 200 rather than 409 is deliberate, a duplicate is a successfully-handled delivery from the sender's point of view, and a non-2xx would cause the sender to retry a message we have already processed.
 
 **Consequence.** The insert path must distinguish a unique-violation from a real error. Tested.
 
 ---
 
-## ADR-006 — The model proposes; the gatekeeper disposes
+## ADR-006, The model proposes; the gatekeeper disposes
 
 **Decision.** Inference emits a `DiagnosticProposal` with no authority. A deterministic gatekeeper converts it into a `SanitizedCommand`, recomputing every money-bearing and compliance-bearing field from the HMAC-verified payload and durable state.
 
-**Why.** The correct division is not "AI vs rules", it is *which questions are genuinely probabilistic*. "Does `gateway_technical_error` mean a transient switch degradation or a planned maintenance window?" is genuinely underdetermined from the code alone and benefits from correlating ambient telemetry — that is a judgement call. "Is this amount ₹4,999?" and "has 24 hours elapsed since the last mandate debit?" are not judgement calls; they are facts with exactly one correct answer, and routing them through a probabilistic system can only introduce error. So the amount is pinned from the signed payload and the cooling window is computed from a timestamp, while the causal classification is inferred.
+**Why.** The correct division is not "AI vs rules", it is *which questions are genuinely probabilistic*. "Does `gateway_technical_error` mean a transient switch degradation or a planned maintenance window?" is genuinely underdetermined from the code alone and benefits from correlating ambient telemetry, that is a judgement call. "Is this amount ₹4,999?" and "has 24 hours elapsed since the last mandate debit?" are not judgement calls; they are facts with exactly one correct answer, and routing them through a probabilistic system can only introduce error. So the amount is pinned from the signed payload and the cooling window is computed from a timestamp, while the causal classification is inferred.
 
 **Consequence.** The gatekeeper may override the model entirely; `OverrodeProposal` records when it did, which makes disagreement measurable rather than invisible.
 
 ---
 
-## ADR-007 — Amount is never sourced from a model response
+## ADR-007, Amount is never sourced from a model response
 
 **Decision.** `SanitizedCommand.ImmutableAmountPaisa` is copied from `PaymentEntity.Amount`, which came from bytes that passed HMAC verification. The proposal has no amount field at all.
 
@@ -82,21 +82,21 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-008 — Money is integer paisa; floats are banned from the money path
+## ADR-008, Money is integer paisa; floats are banned from the money path
 
 **Decision.** All monetary values are `int64` paisa. Probabilities entering money math are converted to integer basis points first.
 
-**Why.** IEEE-754 binary floating point cannot represent 0.1 exactly. Accumulating float rupees across a 500-incident batch produces a total that fails to reconcile, and a reconciliation mismatch in a payment system is not a rounding nit — it is the whole problem the system exists to avoid. Integer paisa with explicit truncation is exactly representable and reproducible.
+**Why.** IEEE-754 binary floating point cannot represent 0.1 exactly. Accumulating float rupees across a 500-incident batch produces a total that fails to reconcile, and a reconciliation mismatch in a payment system is not a rounding nit, it is the whole problem the system exists to avoid. Integer paisa with explicit truncation is exactly representable and reproducible.
 
-**Consequence.** Rounding direction must be chosen explicitly (we truncate, which under-claims recovery rather than over-claims it — the conservative direction for a metric we are asking a reviewer to trust).
+**Consequence.** Rounding direction must be chosen explicitly (we truncate, which under-claims recovery rather than over-claims it, the conservative direction for a metric we are asking a reviewer to trust).
 
 ---
 
-## ADR-009 — Four-tier inference stack: Live → Replay → Heuristic, with provenance recorded
+## ADR-009, Four-tier inference stack: Live → Replay → Heuristic, with provenance recorded
 
 **Decision.** Diagnosis attempts a live model, falls back to a deterministic cassette replay keyed by a bucketed context digest, then to an audit-flagged heuristic classifier. Every proposal records which tier produced it.
 
-**Why.** Three requirements collide: the demo should show real inference; the benchmark must be reproducible to the rupee; and a reviewer must be able to run everything offline with no account and no spend. One tier cannot satisfy all three. Recording the tier on every incident is what keeps this honest — a benchmark cannot silently substitute the heuristic for the model and claim the model's result.
+**Why.** Three requirements collide: the demo should show real inference; the benchmark must be reproducible to the rupee; and a reviewer must be able to run everything offline with no account and no spend. One tier cannot satisfy all three. Recording the tier on every incident is what keeps this honest, a benchmark cannot silently substitute the heuristic for the model and claim the model's result.
 
 **Rejected.** Live-only (unreproducible, requires a key, fails offline); heuristic-only (the static-rules baseline we are trying to beat, so shipping it as the product would be self-defeating).
 
@@ -104,7 +104,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-010 — Cassette digest is computed over a bucketed projection, not raw context
+## ADR-010, Cassette digest is computed over a bucketed projection, not raw context
 
 **Decision.** `ContextDigest` hashes error code, method, issuer key, amount *band*, recurring flag, session-active flag, attempt number, telemetry bucketed to the nearest 10%, and downtime presence/severity/match. Free text is excluded.
 
@@ -114,37 +114,37 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-011 — Session streams are authenticated by an opaque token, not addressed by order id
+## ADR-011, Session streams are authenticated by an opaque token, not addressed by order id
 
 **Decision.** The SSE endpoint is `/api/v1/session/stream/{session_id}` and requires a bearer session token. Only the token's SHA-256 hash is stored. Comparison is constant-time.
 
 **Why.** An endpoint keyed on `order_id` is an insecure direct object reference: order identifiers are semi-predictable, appear in URLs, emails, and client-side code, and are shared with the customer. Anyone who learns one could attach to another merchant's live checkout stream and observe payment state and rail changes in real time. Storing only the hash means a database read cannot be replayed against the endpoint. Constant-time comparison prevents recovering a valid token byte-by-byte from timing.
 
-**Consequence.** The checkout client must carry a token issued at session creation. The token also appears as a `?token=` query parameter because the browser `EventSource` API cannot set headers — accepted as a bounded risk given the token is single-purpose, short-lived, and hashed at rest.
+**Consequence.** The checkout client must carry a token issued at session creation. The token also appears as a `?token=` query parameter because the browser `EventSource` API cannot set headers, accepted as a bounded risk given the token is single-purpose, short-lived, and hashed at rest.
 
 ---
 
-## ADR-012 — Prompt inputs are allowlisted by struct, and untrusted text is fenced as data
+## ADR-012, Prompt inputs are allowlisted by struct, and untrusted text is fenced as data
 
 **Decision.** Only fields declared on `DiagnosticContext` can reach the model. Attacker-influenced strings are control-character stripped, capped at 200 characters, and embedded inside an explicitly delimited data block that the system prompt declares is never instruction.
 
-**Why.** `error_reason` originates upstream and passes through systems we do not control, so it is untrusted input. Defence is layered: the allowlist means cardholder data and raw payloads are structurally incapable of reaching a prompt; the fencing reduces injection success; and the gatekeeper means a *successful* injection still cannot move money, because the compromised field has no authority over amount, compliance, or the action set. The third layer is the one that actually matters — the first two reduce probability, only the third bounds impact.
+**Why.** `error_reason` originates upstream and passes through systems we do not control, so it is untrusted input. Defence is layered: the allowlist means cardholder data and raw payloads are structurally incapable of reaching a prompt; the fencing reduces injection success; and the gatekeeper means a *successful* injection still cannot move money, because the compromised field has no authority over amount, compliance, or the action set. The third layer is the one that actually matters, the first two reduce probability, only the third bounds impact.
 
 **Consequence.** An explicit adversarial test asserts a command stays safe when the model is fully compromised.
 
 ---
 
-## ADR-013 — Circuit breaker per issuer, opening *before* inference
+## ADR-013, Circuit breaker per issuer, opening *before* inference
 
 **Decision.** When an issuer's rolling success rate falls below threshold with sufficient samples, the breaker opens and subsequent incidents for that issuer bypass inference entirely, routing straight to backoff.
 
-**Why.** An outage is exactly when incident volume spikes and inference is least useful — the cause is already known. Diagnosing 4,000 identical failures individually spends latency and money to rediscover one fact. Bypassing inference during a confirmed outage is both cheaper and *more* correct.
+**Why.** An outage is exactly when incident volume spikes and inference is least useful, the cause is already known. Diagnosing 4,000 identical failures individually spends latency and money to rediscover one fact. Bypassing inference during a confirmed outage is both cheaper and *more* correct.
 
 **Consequence.** Breaker state lives in Redis so every worker agrees; half-open probe budget is decremented atomically via a Lua script, because a non-atomic read-modify-write lets a thundering herd through at exactly the wrong moment.
 
 ---
 
-## ADR-014 — Hash-chained, tamper-evident audit ledger
+## ADR-014, Hash-chained, tamper-evident audit ledger
 
 **Decision.** Every consequential decision appends an entry committing to its predecessor's hash. `meshctl audit verify` walks the chain and reports the first break by sequence number.
 
@@ -156,11 +156,11 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-015 — Managed runtime: real PostgreSQL and real RESP, no Docker
+## ADR-015, Managed runtime: real PostgreSQL and real RESP, no Docker
 
 **Decision.** `go run ./cmd/mesh` boots an embedded PostgreSQL binary and an in-process RESP server, handing the same DSNs the external mode uses. Docker Compose ships but is optional.
 
-**Why.** The reviewer's first command is the highest-risk moment in the whole submission. Every prerequisite is a chance for it to fail on someone else's machine. Requiring only the Go toolchain removes Docker, Postgres, and Redis installs from that path. Critically this is *not* an in-memory fake: it is PostgreSQL 18.3 speaking the real wire protocol and a real RESP server, so there is exactly one code path — `pgx` and `go-redis` — and no behaviour that only exists in demo mode.
+**Why.** The reviewer's first command is the highest-risk moment in the whole submission. Every prerequisite is a chance for it to fail on someone else's machine. Requiring only the Go toolchain removes Docker, Postgres, and Redis installs from that path. Critically this is *not* an in-memory fake: it is PostgreSQL 18.3 speaking the real wire protocol and a real RESP server, so there is exactly one code path, `pgx` and `go-redis`, and no behaviour that only exists in demo mode.
 
 **Rejected.** SQLite + in-memory queue (two SQL dialects, two code paths, and the divergence would land precisely on the locking semantics the design depends on).
 
@@ -168,7 +168,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-016 — Benchmark reports confidence intervals, not a point estimate
+## ADR-016, Benchmark reports confidence intervals, not a point estimate
 
 **Decision.** The 500-incident comparison reports NRCV per policy with a paired bootstrap 95% confidence interval and a paired significance test against the baselines.
 
@@ -178,7 +178,7 @@ Every entry records a decision that was not obvious, the alternatives that were 
 
 ---
 
-## ADR-017 — Private material is quarantined outside the tracked tree
+## ADR-017, Private material is quarantined outside the tracked tree
 
 **Decision.** Strategy notes, planning documents, and the source brief live under `_internal/`, which is git-ignored. A `leakscan` script fails the build if a tracked file matches secret patterns or references internal paths, and it runs in CI.
 

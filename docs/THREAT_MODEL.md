@@ -1,6 +1,6 @@
 # Threat Model
 
-Scope: the ResilientMesh service — its HTTP edge, worker pool, datastores, inference dependency, and operator surfaces. Out of scope: the acquiring bank, the issuer, and Razorpay's own platform.
+Scope: the ResilientMesh service, its HTTP edge, worker pool, datastores, inference dependency, and operator surfaces. Out of scope: the acquiring bank, the issuer, and Razorpay's own platform.
 
 Each threat lists the control and the test that proves the control works. A control without a test is an intention, not a control.
 
@@ -26,7 +26,7 @@ Each threat lists the control and the test that proves the control works. A cont
 | 1.2 | Replayed capture of a genuine webhook drives repeat retries | Repudiation, Elevation | `X-Razorpay-Event-Id` is `UNIQUE` on `incidents`; duplicates return 200 and create no outbox row. The database is the serialisation point, so two concurrent deliveries cannot both win | Duplicate-delivery test, plus a concurrent duplicate storm |
 | 1.3 | Very old captured event replayed after the issuer recovers | Spoofing | `created_at` outside a ±300 s skew window is rejected | Skew test, both directions |
 | 1.4 | Multi-gigabyte body exhausts memory | DoS | `http.MaxBytesReader` at 1 MiB before any read; body is never buffered unbounded | Oversized body returns 413 |
-| 1.5 | Request flood from one source | DoS | Per-IP token bucket in a capacity-bounded LRU, plus a global limiter. `X-Forwarded-For` honoured only behind an explicit trust flag — blindly trusting it lets any client forge its identity and bypass the limit | Rate limit test; XFF spoof test |
+| 1.5 | Request flood from one source | DoS | Per-IP token bucket in a capacity-bounded LRU, plus a global limiter. `X-Forwarded-For` honoured only behind an explicit trust flag, blindly trusting it lets any client forge its identity and bypass the limit | Rate limit test; XFF spoof test |
 | 1.6 | Slowloris holds connections open | DoS | `ReadHeaderTimeout` and `ReadTimeout` set on the server | Server config assertion |
 | 1.7 | Error responses leak internals | Information disclosure | Fixed response bodies. Parse errors, SQL errors, and panics never reach the client; panics are recovered and logged with an opaque 500 | Panic middleware test asserts no leak |
 | 1.8 | Timing side channel recovers the signature | Information disclosure | `hmac.Equal` over equal-length byte slices | Constant-time comparison is asserted by code review and enforced by the decode-then-compare ordering |
@@ -51,7 +51,7 @@ Each threat lists the control and the test that proves the control works. A cont
 
 | # | Threat | STRIDE | Control | Test |
 |---|---|---|---|---|
-| 3.1 | Unauthenticated access to incident and audit data | Information disclosure | Bearer token, constant-time compare. **If no token is configured the API denies everything** rather than allowing everything — fail closed | Empty-token test asserts 401 |
+| 3.1 | Unauthenticated access to incident and audit data | Information disclosure | Bearer token, constant-time compare. **If no token is configured the API denies everything** rather than allowing everything, fail closed | Empty-token test asserts 401 |
 | 3.2 | Console XSS via attacker-controlled incident text | Tampering | Every cell is written with `textContent`; `innerHTML` appears nowhere. CSP is `default-src 'self'` with no `unsafe-inline`, achievable because styles and scripts are separate same-origin files | CSP header test; code review gate on `innerHTML` |
 | 3.3 | Cross-origin read of the ops API | Information disclosure | CORS denies by default and never reflects an arbitrary `Origin`; credentials are never paired with a wildcard | Foreign-origin test |
 | 3.4 | Clickjacking the console | Tampering | `X-Frame-Options: DENY`, `frame-ancestors 'none'` | Header test |
@@ -103,6 +103,6 @@ Each threat lists the control and the test that proves the control works. A cont
 | Risk | Why accepted |
 |---|---|
 | Session token appears as a query parameter | `EventSource` cannot set headers. Bounded by short TTL, single purpose, hash-at-rest, `Referrer-Policy: no-referrer`, and removal from browser history by the client |
-| At-least-once delivery means duplicate processing | Deliberate — the alternative is lost events. Bounded by `UNIQUE` idempotency on `event_id` |
+| At-least-once delivery means duplicate processing | Deliberate, the alternative is lost events. Bounded by `UNIQUE` idempotency on `event_id` |
 | In-memory SSE hub loses subscriptions on restart | Sessions are seconds-to-minutes long and the client reconnects. Persisting them would add a datastore dependency to the latency-critical path for little gain; the limitation is stated honestly to the client rather than papered over |
 | Replay cassettes are recorded, not live | Recorded inference is what makes the benchmark reproducible. The tier is recorded on every incident so it can never be passed off as live |

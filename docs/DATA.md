@@ -20,7 +20,7 @@ What this system stores, why each item is necessary, how long it stays, and what
 ## What is never stored, and never transmitted
 
 - **Card numbers, expiry, CVV, cardholder name.** Razorpay does not send them in these webhooks, and there is no column for them. The system is not in PCI scope and is designed to stay that way.
-- **Customer contact details** — phone, email, address. No field exists.
+- **Customer contact details**, phone, email, address. No field exists.
 - **VPA in full.** Only the handle is extracted for issuer keying: `name@okhdfcbank` becomes `upi:okhdfcbank`. The local part is discarded at the boundary, because outages are handle-scoped and the local part carries only identity.
 - **Authentication material.** Session tokens are stored as SHA-256 hashes. The webhook secret and API keys exist only in process memory from the environment.
 
@@ -28,7 +28,7 @@ What this system stores, why each item is necessary, how long it stays, and what
 
 ## What reaches the inference provider
 
-This is the narrowest surface in the system, and it is defined by a struct rather than by a filter — `DiagnosticContext` is an allowlist, so a field that does not exist cannot leak.
+This is the narrowest surface in the system, and it is defined by a struct rather than by a filter, `DiagnosticContext` is an allowlist, so a field that does not exist cannot leak.
 
 | Sent | Not sent |
 |---|---|
@@ -39,7 +39,7 @@ This is the narrowest surface in the system, and it is defined by a struct rathe
 | Rolling telemetry and downtime signals | Merchant identity |
 | `error_reason`, sanitised and capped at 200 characters, fenced as data | Anything else |
 
-`error_reason` is the only free text that crosses the boundary. It originates upstream, so it is treated as untrusted: control characters stripped, length capped, and placed inside an explicitly delimited data block. The bucketed amount is deliberate — the model has no legitimate use for the exact figure, and removing it eliminates both a correlation vector and an injection vector.
+`error_reason` is the only free text that crosses the boundary. It originates upstream, so it is treated as untrusted: control characters stripped, length capped, and placed inside an explicitly delimited data block. The bucketed amount is deliberate, the model has no legitimate use for the exact figure, and removing it eliminates both a correlation vector and an injection vector.
 
 ---
 
@@ -60,7 +60,7 @@ Audit details are redacted **before** hashing, so a secret cannot be recovered f
 | `outbox_events`, dispatched | 7 days | Operational debugging only; the durability role ends at dispatch |
 | `sessions` | 24 hours after expiry | Sessions are minutes long; the row is only kept briefly for post-hoc debugging |
 | `mandates` | Life of the mandate plus 90 days | Cooling and cycle state must outlive individual incidents |
-| `audit_ledger` | 7 years | Financial audit record. Never pruned from the head — the chain is only meaningful whole, so archival exports a verified prefix rather than deleting rows |
+| `audit_ledger` | 7 years | Financial audit record. Never pruned from the head, the chain is only meaningful whole, so archival exports a verified prefix rather than deleting rows |
 | Telemetry and breaker state in Redis | Rolling window × 3, by TTL | Operational signal with no retention value |
 
 Retention is enforced by a scheduled prune that deletes only from tables where deletion is safe. `audit_ledger` is deliberately excluded from any automated deletion path.
@@ -69,7 +69,7 @@ Retention is enforced by a scheduled prune that deletes only from tables where d
 
 ## Access
 
-- Application credentials hold `SELECT`, `INSERT`, and `UPDATE` on operational tables, and `SELECT` plus `INSERT` on `audit_ledger` — no `UPDATE`, no `DELETE`. The application only appends, so anything else in the audit table came from outside it.
+- Application credentials hold `SELECT`, `INSERT`, and `UPDATE` on operational tables, and `SELECT` plus `INSERT` on `audit_ledger`, no `UPDATE`, no `DELETE`. The application only appends, so anything else in the audit table came from outside it.
 - The operations API is closed by default. If no token is configured it denies everything rather than allowing everything.
 - No data leaves the deployment except the allowlisted diagnostic context, and only when the live inference tier is configured.
 

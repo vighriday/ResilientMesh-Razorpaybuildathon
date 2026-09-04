@@ -21,7 +21,7 @@ asks, you can safely deny it.
 | Need | Why | Check |
 |---|---|---|
 | **Go 1.25+** | The system is Go. | `go version` |
-| ~200 MB disk | A PostgreSQL 18.3 binary is downloaded once and cached. | — |
+| ~200 MB disk | A PostgreSQL 18.3 binary is downloaded once and cached. |, |
 | Python 3.10+ *(optional)* | Only for the recovery benchmark in `eval/`. | `python --version` |
 
 Nothing else. No `psql`, no `redis-server`, no migration tool: PostgreSQL and a
@@ -105,7 +105,7 @@ cached in your user cache directory afterwards.
 
 ---
 
-## 2. See it happen — the interactive demo
+## 2. See it happen, the interactive demo
 
 ```bash
 go run ./cmd/mesh
@@ -127,14 +127,14 @@ Wait for the banner, then open the two URLs it prints.
 ────────────────────────────────────────────────────────────────────
 ```
 
-### 2a. The ops console — what to look at
+### 2a. The ops console, what to look at
 
 Open `/console.html` and paste the **ops token** from the banner.
 
 | What you see | What it means |
 |---|---|
 | **Incidents** table filling | Failed payments arriving over signed webhooks and being recorded |
-| **Inference tier** badge per row | Which tier decided: `LIVE`, `REPLAY` or `HEURISTIC`. With no API key you will see `HEURISTIC` — the system is fully functional without a model |
+| **Inference tier** badge per row | Which tier decided: `LIVE`, `REPLAY` or `HEURISTIC`. With no API key you will see `HEURISTIC`, the system is fully functional without a model |
 | **Issuer health** table | Rolling success rate per issuer, and each circuit breaker's state |
 | **Audit chain** table | Every consequential decision, hash-chained |
 | **Verify** button | Recomputes every link in the chain and reports the verdict |
@@ -142,7 +142,7 @@ Open `/console.html` and paste the **ops token** from the banner.
 Press **Verify**. It should say the chain is intact and give you the entry count
 and head hash.
 
-### 2b. The checkout — in-session healing
+### 2b. The checkout, in-session healing
 
 Open `/checkout.html` in a second tab. It opens a live session and connects to
 the event stream. When the scripted outage hits its rail, the page **moves the
@@ -150,7 +150,7 @@ customer from Netbanking to UPI mid-session**, over Server-Sent Events, with the
 amount unchanged. That is the "before the customer gives up" claim, visible.
 
 The stream is keyed by an opaque session id plus a single-purpose bearer token,
-not by order id — see ADR-011 in [`../decisions.md`](../decisions.md) for why
+not by order id, see ADR-011 in [`../decisions.md`](../decisions.md) for why
 the obvious design is an authorisation bug.
 
 ### 2c. Useful flags
@@ -168,7 +168,7 @@ go run ./cmd/mesh -h                          # every flag
 **About `-speed`:** correct production backoff is minutes to hours, so an
 un-compressed demo shows decisions and never an outcome. `-speed` shortens
 **only the wall-clock wait** before a scheduled retry. It never changes a
-decision — the gatekeeper's delays include regulatory floors such as RBI's
+decision, the gatekeeper's delays include regulatory floors such as RBI's
 24-hour cooling window, and a system that could configure its way under one
 would have no invariant at all. Both the real delay and the compression factor
 are written to the audit ledger, so a compressed run can never be mistaken for a
@@ -177,10 +177,10 @@ production.
 
 ---
 
-## 3. Inspect what it did — the operator CLI
+## 3. Inspect what it did, the operator CLI
 
 While `cmd/mesh` is running, open a second terminal. `meshctl` attaches to a
-running mesh, so give it that mesh's endpoints — `cmd/mesh` logs the managed
+running mesh, so give it that mesh's endpoints, `cmd/mesh` logs the managed
 PostgreSQL and Redis ports at startup:
 
 ```bash
@@ -199,7 +199,7 @@ go run ./cmd/meshctl incident show <incident_id>
 go run ./cmd/meshctl audit verify
 ```
 
-`incident show` is the explainability surface — the whole story of one incident
+`incident show` is the explainability surface, the whole story of one incident
 in the order it happened:
 
 ```
@@ -210,7 +210,7 @@ state         RECOVERED after 2 attempt(s)
 decision trail
   SEQ  KIND                 DETAIL
   25   WEBHOOK_ACCEPTED     …
-  26   DIAGNOSIS_PROPOSED   HEURISTIC proposed ASYNC_EXPONENTIAL_RETRY at 0.60 — upstream …
+  26   DIAGNOSIS_PROPOSED   HEURISTIC proposed ASYNC_EXPONENTIAL_RETRY at 0.60, upstream …
   27   GATE_DECISION        ASYNC_EXPONENTIAL_RETRY rail=upi_intent delay=60s [AMOUNT_PINNED DELAY_BOUNDS]
   28   INCIDENT_SCHEDULED   …
   29   ATTEMPT_STARTED      …
@@ -219,7 +219,7 @@ decision trail
 
 attempts
   N  RAIL        OUTCOME    CODE  COST     COMPLETED
-  2  upi_intent  succeeded  —     ₹2.50    2026-09-04T16:23:10Z
+  2  upi_intent  succeeded, ₹2.50    2026-09-04T16:23:10Z
 ```
 
 Note `applied_invariants` on the gate decision. Every rule that fired is named.
@@ -249,7 +249,7 @@ powershell -ExecutionPolicy Bypass -File scripts/judge.ps1    # Windows
 ```
 
 Runs every gate below, writes `artifacts/JUDGE_REPORT.md`, and exits non-zero if
-anything fails. It reports honestly when a gate is skipped and why — including
+anything fails. It reports honestly when a gate is skipped and why, including
 when the race detector is unavailable on your machine.
 
 ### Exhaustive proof over the decision state space
@@ -300,9 +300,9 @@ go test ./... -race -count=1          # needs a 64-bit C toolchain
 go test ./internal/gatekeeper -run Property -count=1 -v
 ```
 
-The property run drives 20,000 randomised, adversarial inputs — including
+The property run drives 20,000 randomised, adversarial inputs, including
 prompt-injection strings, NaN confidences, SQL in action names and 500-character
-identifiers — through the real gatekeeper and asserts every invariant holds. It
+identifiers, through the real gatekeeper and asserts every invariant holds. It
 also asserts its **own** coverage: if any rule stops firing, the test fails
 rather than passing vacuously.
 
@@ -312,8 +312,8 @@ rather than passing vacuously.
 python eval/benchmark.py --incidents 500 --seed 20260904 --out artifacts/benchmark.json
 ```
 
-Runs four policies over the same generated incident stream — do nothing, blind
-retry, static rules, an incumbent-style smart retry, and this system — and
+Runs four policies over the same generated incident stream, do nothing, blind
+retry, static rules, an incumbent-style smart retry, and this system, and
 compares them with a **paired bootstrap over merchants** (not over incidents;
 incidents from one merchant are not independent draws, and treating them as such
 narrows the interval to a number that is not true).
@@ -369,18 +369,18 @@ go run ./cmd/mesh
 The banner will read `Inference  LIVE openai/gpt-oss-120b, falling back to
 REPLAY then HEURISTIC`, and console rows will show `LIVE` badges.
 
-Google AI Studio, OpenAI and a local Ollama work the same way — set
+Google AI Studio, OpenAI and a local Ollama work the same way, set
 `MESH_LLM_PROVIDER` to `gemini`, `openai` or `ollama`. All four speak the
 OpenAI-compatible format, so the provider only selects endpoint and model
 defaults. See [`../.env.example`](../.env.example).
 
 **What changes with a key:** only the ambiguous failure set is decided
 differently. Terminal declines, soft declines, every regulatory rule and every
-money value are deterministic in all three tiers — see the "AI judgment" section
+money value are deterministic in all three tiers, see the "AI judgment" section
 of the README for where a model is deliberately not used, and why.
 
 **What does not change:** the gatekeeper. The model's output is advisory. You
-can verify this the fun way — set `MESH_LOG_LEVEL=debug`, watch the proposals,
+can verify this the fun way, set `MESH_LOG_LEVEL=debug`, watch the proposals,
 and confirm that a proposal the gate rejects is recorded as a veto with reasons
 and executes nothing.
 
@@ -392,20 +392,20 @@ The one-command demo is a convenience, not a special build. The same composition
 root serves a split deployment:
 
 ```bash
-# Terminal 1 — the Razorpay simulator
+# Terminal 1, the Razorpay simulator
 go run ./cmd/simulator
 
-# Terminal 2 — the API edge only
+# Terminal 2, the API edge only
 MESH_INFRA_MODE=external MESH_PG_DSN=... MESH_REDIS_ADDR=... \
 MESH_WEBHOOK_SECRET=... MESH_OPS_TOKEN=... go run ./cmd/api
 
-# Terminal 3 — the recovery pipeline only
+# Terminal 3, the recovery pipeline only
 MESH_INFRA_MODE=external MESH_PG_DSN=... MESH_REDIS_ADDR=... \
 MESH_WEBHOOK_SECRET=... MESH_OPS_TOKEN=... go run ./cmd/worker
 ```
 
 Splitting them is what lets the edge scale on request volume and the worker on
-incident volume — unrelated numbers, since one very large outage produces few
+incident volume, unrelated numbers, since one very large outage produces few
 requests and many incidents.
 
 There is also a `Dockerfile` and a `docker-compose.yml` if you would rather run
@@ -436,7 +436,7 @@ If you read nothing else, read these three:
 | File | Why |
 |---|---|
 | [`../internal/gatekeeper/gatekeeper.go`](../internal/gatekeeper/gatekeeper.go) | The 14 invariants. The authoritative decision. Every rule carries the reasoning for its existence. |
-| [`../internal/domain/decision.go`](../internal/domain/decision.go) | The trust boundary. Note that `DiagnosticProposal` has **no amount field** — a model cannot propose a different amount because the wire format gives it nowhere to write one. |
+| [`../internal/domain/decision.go`](../internal/domain/decision.go) | The trust boundary. Note that `DiagnosticProposal` has **no amount field**, a model cannot propose a different amount because the wire format gives it nowhere to write one. |
 | [`../internal/worker/worker.go`](../internal/worker/worker.go) | The pipeline, including the deferred-recovery sweep that a whole-system run proved was missing. |
 
 Then: [`../docs/ARCHITECTURE.md`](ARCHITECTURE.md),

@@ -91,24 +91,24 @@ This is the part that matters most.
 | Has 24 hours elapsed since the last mandate debit? | a fact | database timestamp |
 | Is this the fourth attempt? | a fact | durable counter |
 
-The model classifies. It never computes money, never decides compliance, never chooses an action outside a closed set. `DiagnosticProposal` has no amount field at all — an absent field cannot be wrong, whereas a validated one can still be wrong within its range.
+The model classifies. It never computes money, never decides compliance, never chooses an action outside a closed set. `DiagnosticProposal` has no amount field at all, an absent field cannot be wrong, whereas a validated one can still be wrong within its range.
 
 ### The twelve invariants
 
 Applied in order, each recording its name on the command when it fires:
 
-1. `AMOUNT_PINNED` — amount and currency copied from the verified payload. Always.
-2. `TERMINAL_DECLINE` — unrecoverable issuer response → abstain.
-3. `STOP_RULE_MAX_ATTEMPTS` — attempt cap exceeded → abstain.
-4. `LOW_CONFIDENCE_ABSTAIN` — below the confidence floor → abstain.
-5. `UNRECOVERABLE_CLASS` — class not worth a retry → abstain.
-6. `SESSION_REQUIRED_FOR_MORPH` — no live session → downgrade to async retry.
-7. `RAIL_ALLOWLIST` — target rail must be enabled, healthy, and different from the failing one.
-8. `RBI_MANDATE_COOLING` — recurring: delay forced to ≥ 24 h, action becomes a mandate cascade.
-9. `RBI_PRE_DEBIT_NOTICE` — recurring: notification required before any debit in this cycle.
-10. `MANDATE_HALTED` — halted mandate → abstain.
-11. `MANDATE_CYCLE_CAP` — per-cycle attempts exhausted → abstain and halt.
-12. `DELAY_BOUNDS` — final delay clamped into range.
+1. `AMOUNT_PINNED`, amount and currency copied from the verified payload. Always.
+2. `TERMINAL_DECLINE`, unrecoverable issuer response → abstain.
+3. `STOP_RULE_MAX_ATTEMPTS`, attempt cap exceeded → abstain.
+4. `LOW_CONFIDENCE_ABSTAIN`, below the confidence floor → abstain.
+5. `UNRECOVERABLE_CLASS`, class not worth a retry → abstain.
+6. `SESSION_REQUIRED_FOR_MORPH`, no live session → downgrade to async retry.
+7. `RAIL_ALLOWLIST`, target rail must be enabled, healthy, and different from the failing one.
+8. `RBI_MANDATE_COOLING`, recurring: delay forced to ≥ 24 h, action becomes a mandate cascade.
+9. `RBI_PRE_DEBIT_NOTICE`, recurring: notification required before any debit in this cycle.
+10. `MANDATE_HALTED`, halted mandate → abstain.
+11. `MANDATE_CYCLE_CAP`, per-cycle attempts exhausted → abstain and halt.
+12. `DELAY_BOUNDS`, final delay clamped into range.
 
 The gatekeeper is pure: same input, same command, always. It is verified by property tests over 20,000 randomised adversarial inputs, including deliberately malformed model responses.
 
@@ -156,7 +156,7 @@ Two details carry the weight:
 | Failure | Behaviour |
 |---|---|
 | Redis unavailable | API keeps accepting; outbox buffers; drains on recovery |
-| PostgreSQL unavailable | Edge returns 503 — accepting a payment event it cannot durably record would lose it |
+| PostgreSQL unavailable | Edge returns 503, accepting a payment event it cannot durably record would lose it |
 | Inference provider unavailable | Falls to replay, then to the audit-flagged heuristic; tier is recorded on every incident |
 | Issuer in a confirmed outage | Breaker opens; incidents skip inference entirely and route straight to backoff |
 | Outbox depth above high-water mark | Edge sheds load with 503 + `Retry-After` rather than accepting undrainable work |
@@ -173,4 +173,4 @@ Two details carry the weight:
 | `managed` (default) | embedded binary, real PG 18.3 | in-process RESP server | one command, no Docker, no installs |
 | `external` | your DSN | your address | Compose, or real infrastructure |
 
-Both modes hand the same DSNs to the same `pgx` and `go-redis` clients. There is exactly one code path — no behaviour exists only in demo mode.
+Both modes hand the same DSNs to the same `pgx` and `go-redis` clients. There is exactly one code path, no behaviour exists only in demo mode.

@@ -5,10 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 ## [Unreleased]
 
 ### Added
-- **Frozen domain contracts** (`internal/domain`) — Razorpay wire types, the failure taxonomy, the rail model, the probabilistic/deterministic trust boundary (`DiagnosticContext` → `DiagnosticProposal` → `SanitizedCommand`), persistence records, the hash-chained audit entry, the shared cost model, and every cross-package port. No I/O, no internal imports, acyclic by construction.
-- **Length-prefixed audit hashing** — `AuditEntry.ComputeHash` absorbs each field with an explicit length prefix rather than concatenating, closing the boundary-shifting forgery that naive concatenation allows.
-- **Bucketed model input** — `AmountBand` keeps exact monetary values out of prompts while preserving the band-shaped signal that issuer limits actually carry.
-- **Issuer key space** — `PaymentEntity.Issuer()` and `DowntimeEntity.TelemetryKey()` project payments and downtime notices into one key space, so a downtime notice joins against live failure counters without a lookup table. UPI keys off the VPA handle because UPI outages are PSP-scoped, not bank-scoped.
+- **Frozen domain contracts** (`internal/domain`), Razorpay wire types, the failure taxonomy, the rail model, the probabilistic/deterministic trust boundary (`DiagnosticContext` → `DiagnosticProposal` → `SanitizedCommand`), persistence records, the hash-chained audit entry, the shared cost model, and every cross-package port. No I/O, no internal imports, acyclic by construction.
+- **Length-prefixed audit hashing**, `AuditEntry.ComputeHash` absorbs each field with an explicit length prefix rather than concatenating, closing the boundary-shifting forgery that naive concatenation allows.
+- **Bucketed model input**, `AmountBand` keeps exact monetary values out of prompts while preserving the band-shaped signal that issuer limits actually carry.
+- **Issuer key space**, `PaymentEntity.Issuer()` and `DowntimeEntity.TelemetryKey()` project payments and downtime notices into one key space, so a downtime notice joins against live failure counters without a lookup table. UPI keys off the VPA handle because UPI outages are PSP-scoped, not bank-scoped.
 - Architecture decision log (`decisions.md`), 17 entries covering every non-obvious choice and its rejected alternatives.
 
 ### Security
@@ -20,17 +20,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - `go build ./...`, `go vet ./internal/domain/`, `gofmt -l` all clean.
 - Runtime dependencies proven on the target machine before being committed to: embedded PostgreSQL 18.3 boots in 23 s cold and accepts `pgx` connections with `jsonb` DDL; `miniredis` serves real RESP over TCP with `XADD`/`XGROUP`/`XREADGROUP`/`XACK`/`XPENDING`/`XAUTOCLAIM`/`EVAL` all working against `go-redis` v9.
 
-### Added — core engine
-- `internal/config` — 29 documented environment variables, redacting `String()`/`LogValue()`, managed-mode credential generation from `crypto/rand`, and a cost model shared with the Python harness through one `eval/costs.json` so the live policy engine and the offline benchmark cannot price an incident differently.
-- `internal/obs` — a redacting `slog` handler that covers `WithAttrs` and `WithGroup`, not just top-level attributes, plus an in-process metrics registry with bucketed latency histograms.
-- `internal/policy` — Laplace-smoothed rail selection, so a rail at 1/1 does not outrank one at 400/500; integer-paisa expected value; seeded jitter for reproducible backoff.
-- `internal/gatekeeper` — twelve ordered invariants, verified by a property test over 20,000 randomised adversarial inputs including hostile model responses and NaN confidences.
-- `internal/agent` — three inference tiers behind one interface, a bucketed context digest that excludes attacker-influenced free text, and prompt construction that fences untrusted strings as data.
-- `internal/infra` — real PostgreSQL and a real RESP server in-process, so the zero-dependency path and the Docker path share exactly one code path.
-- `internal/store` — `SELECT ... FOR UPDATE SKIP LOCKED` for the outbox and an advisory-locked audit append, both verified concurrently against a real PostgreSQL.
+### Added, core engine
+- `internal/config`, 29 documented environment variables, redacting `String()`/`LogValue()`, managed-mode credential generation from `crypto/rand`, and a cost model shared with the Python harness through one `eval/costs.json` so the live policy engine and the offline benchmark cannot price an incident differently.
+- `internal/obs`, a redacting `slog` handler that covers `WithAttrs` and `WithGroup`, not just top-level attributes, plus an in-process metrics registry with bucketed latency histograms.
+- `internal/policy`, Laplace-smoothed rail selection, so a rail at 1/1 does not outrank one at 400/500; integer-paisa expected value; seeded jitter for reproducible backoff.
+- `internal/gatekeeper`, twelve ordered invariants, verified by a property test over 20,000 randomised adversarial inputs including hostile model responses and NaN confidences.
+- `internal/agent`, three inference tiers behind one interface, a bucketed context digest that excludes attacker-influenced free text, and prompt construction that fences untrusted strings as data.
+- `internal/infra`, real PostgreSQL and a real RESP server in-process, so the zero-dependency path and the Docker path share exactly one code path.
+- `internal/store`, `SELECT ... FOR UPDATE SKIP LOCKED` for the outbox and an advisory-locked audit append, both verified concurrently against a real PostgreSQL.
 
 ### Fixed
 - Five fail-open paths in the domain contracts, each found by an independent review of the contract by its consumers rather than by its author. See the commit for the full account.
 
 ### Changed
-- `card_expired` and `card_not_supported` are no longer terminal declines. A changed card number does not mean the funding account is gone, and the network token still resolves — treating them as terminal silently discards recoverable revenue that incumbent processors recover routinely.
+- `card_expired` and `card_not_supported` are no longer terminal declines. A changed card number does not mean the funding account is gone, and the network token still resolves, treating them as terminal silently discards recoverable revenue that incumbent processors recover routinely.
