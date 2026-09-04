@@ -569,6 +569,49 @@ func (s *memStore) MarkOutboxDispatched(ctx context.Context, ids []int64) error 
 	return nil
 }
 
+// RecordOutboxFailure charges one attempt and returns the row to the pending
+// pool. It never parks: deciding a row is poison is MarkOutboxFailed's job, and
+// keeping the two separate is what stopped a broker outage from dead-lettering
+// an entire backlog.
+func (s *memStore) RecordOutboxFailure(ctx context.Context, id int64, cause string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guard(ctx, "record outbox failure"); err != nil {
+		return err
+	}
+	for _, row := range s.outbox {
+		if row.ev.ID != id || row.ev.State != domain.OutboxPending {
+			continue
+		}
+		row.ev.Attempts++
+		row.ev.LastError = truncateField(cause)
+		row.claimedUntil = 0
+		return nil
+	}
+	return nil
+}
+
+// ReleaseOutboxClaim hands leased rows back uncharged, for a failure that was
+// the queue's rather than the rows'. A fake that charged them anyway would let
+// the simulation pass against semantics the real store no longer has.
+func (s *memStore) ReleaseOutboxClaim(ctx context.Context, ids []int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guard(ctx, "release outbox claim"); err != nil {
+		return err
+	}
+	want := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		want[id] = struct{}{}
+	}
+	for _, row := range s.outbox {
+		if _, ok := want[row.ev.ID]; ok && row.ev.State == domain.OutboxPending {
+			row.claimedUntil = 0
+		}
+	}
+	return nil
+}
+
 func (s *memStore) MarkOutboxFailed(ctx context.Context, id int64, cause string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -651,6 +694,17 @@ func (s *memStore) RecordAttempt(ctx context.Context, a domain.AttemptRecord) er
 	}
 	if !a.Presentation.Valid() {
 		a.Presentation = domain.PresentationUnchanged
+	}
+	// Idempotent on (incident, attempt number), mirroring the unique constraint
+	// the real schema carries. The commit path is retried on purpose — losing
+	// the record of a debit is worse than the debit — so a fake that happily
+	// appended a second row would let the simulation pass against a store the
+	// production one would have rejected, which is the exact way a fake stops
+	// being evidence.
+	for _, seen := range s.attempts {
+		if seen.IncidentID == a.IncidentID && seen.AttemptNumber == a.AttemptNumber {
+			return nil
+		}
 	}
 	s.nextAttemptID++
 	a.ID = s.nextAttemptID

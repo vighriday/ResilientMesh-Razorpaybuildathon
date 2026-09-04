@@ -475,13 +475,19 @@ VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()))`
 	//
 	// The outer UPDATE extends the claim past the transaction with a lease, so
 	// the rows stay invisible to other relays through the publish that follows.
+	//
+	// The lease is all it sets. Charging an attempt here would spend a row's
+	// retry budget on merely being looked at, so a broker outage — which makes
+	// every claim fail for reasons that have nothing to do with any row — would
+	// exhaust every budget in the table and park work that was never poison.
+	// Attempts are charged in RecordOutboxFailure, where the failure is known
+	// to be attributable to the row.
 	claimOutboxBatchSQL = `
 WITH claimed AS (
     SELECT id FROM outbox_events WHERE state='PENDING' AND claimed_until <= now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1
 )
 UPDATE outbox_events o
-   SET attempts = o.attempts + 1,
-       claimed_until = now() + ($2::int * INTERVAL '1 second')
+   SET claimed_until = now() + ($2::int * INTERVAL '1 second')
   FROM claimed c
  WHERE o.id = c.id
 RETURNING o.id, o.incident_id, o.topic, o.payload, o.state, o.attempts, o.last_error, o.created_at, o.dispatched_at`
@@ -492,6 +498,20 @@ UPDATE outbox_events SET state = 'DISPATCHED', dispatched_at = now(), last_error
 
 	markOutboxFailedSQL = `
 UPDATE outbox_events SET state = 'FAILED', last_error = $2, claimed_until = now() WHERE id = $1`
+
+	// recordOutboxFailureSQL charges one attempt to a row and releases its
+	// lease, leaving it PENDING so the next poll re-claims it. This is the
+	// non-terminal failure path; MarkOutboxFailed is the terminal one.
+	recordOutboxFailureSQL = `
+UPDATE outbox_events
+   SET attempts = attempts + 1, last_error = $2, claimed_until = now()
+ WHERE id = $1 AND state = 'PENDING'`
+
+	// releaseOutboxClaimSQL hands rows back untouched. The queue was
+	// unreachable, which says nothing about these rows, so their attempt budget
+	// is not charged.
+	releaseOutboxClaimSQL = `
+UPDATE outbox_events SET claimed_until = now() WHERE id = ANY($1) AND state = 'PENDING'`
 
 	outboxDepthSQL = `
 SELECT count(*) FILTER (WHERE state = 'PENDING'), count(*) FILTER (WHERE state = 'FAILED')
@@ -597,6 +617,46 @@ func (p *Postgres) MarkOutboxDispatched(ctx context.Context, ids []int64) error 
 // MarkOutboxFailed parks a poison event. The cause is truncated rather than
 // rejected: it is gateway or driver text, and losing the whole failure record
 // because the message was long would hide the very thing being recorded.
+// RecordOutboxFailure charges one attempt against a row and hands it back.
+//
+// The row stays PENDING: a single failed publish is not a verdict on the row,
+// it is one data point, and the caller decides when the accumulated count means
+// the row is poison. Before this existed the relay reached for MarkOutboxFailed
+// on every failure, which sets state to FAILED — so the very first failure
+// parked the row permanently, the eight-attempt budget was unreachable, and a
+// transient broker outage silently destroyed every event it touched.
+//
+// Deterministic simulation found that: the NO_EVENT_LOST invariant reported
+// twenty thousand dead-lettered rows under an injected queue outage, from four
+// hundred incidents.
+func (p *Postgres) RecordOutboxFailure(ctx context.Context, id int64, cause string) error {
+	if _, err := p.pool.Exec(ctx, recordOutboxFailureSQL, id, truncate(cause, maxFreeTextLen)); err != nil {
+		return classify("store: record outbox failure", err)
+	}
+	// A zero row count means the row was concurrently dispatched or parked.
+	// Neither is an error worth propagating: the caller's next poll will see
+	// the current state, and failing here would turn a benign race into an
+	// error log during exactly the incident that produced the race.
+	return nil
+}
+
+// ReleaseOutboxClaim returns leased rows without charging them.
+//
+// It is the transport-failure path: the queue could not be reached, which is a
+// statement about the queue and not about these rows, so their budgets are
+// untouched and they become claimable again immediately. The relay's own
+// jittered backoff is what stops that becoming a hot loop against a dead
+// broker.
+func (p *Postgres) ReleaseOutboxClaim(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := p.pool.Exec(ctx, releaseOutboxClaimSQL, ids); err != nil {
+		return classify("store: release outbox claim", err)
+	}
+	return nil
+}
+
 func (p *Postgres) MarkOutboxFailed(ctx context.Context, id int64, cause string) error {
 	tag, err := p.pool.Exec(ctx, markOutboxFailedSQL, id, truncate(cause, maxFreeTextLen))
 	if err != nil {
@@ -741,7 +801,8 @@ const (
 INSERT INTO attempts (
     incident_id, attempt_number, action, rail, presentation, amount_paisa, succeeded,
     gateway_fee_paisa, friction_paisa, error_code, started_at, completed_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()), COALESCE($12, now()))`
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, now()), COALESCE($12, now()))
+ON CONFLICT (incident_id, attempt_number) DO NOTHING`
 
 	listAttemptsSQL = `
 SELECT id, incident_id, attempt_number, action, rail, presentation, amount_paisa, succeeded,
@@ -749,7 +810,17 @@ SELECT id, incident_id, attempt_number, action, rail, presentation, amount_paisa
   FROM attempts WHERE incident_id = $1 ORDER BY attempt_number, id`
 )
 
-// RecordAttempt stores an executed attempt and its economics. Fees and friction
+// RecordAttempt stores an executed attempt and its economics, idempotently.
+//
+// The caller retries this until it commits, because losing the record of a
+// debit is worse than the debit. That retry is only safe if a second insert of
+// the same attempt is a no-op, so the uniqueness of (incident_id,
+// attempt_number) is enforced by the database and the conflict is swallowed
+// here. Swallowing it is correct rather than lazy: the row already present
+// describes the same attempt, and the alternative — an error the caller must
+// distinguish from a real failure — is how a retry loop turns into a stall.
+//
+// Fees and friction
 // are persisted per attempt rather than derived later, so the NRCV benchmark
 // reports what the run actually cost and not what today's cost model says it
 // would have cost.

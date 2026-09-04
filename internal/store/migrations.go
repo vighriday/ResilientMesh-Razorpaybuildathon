@@ -17,7 +17,7 @@ import (
 // clean machine gets the same schema as CI without a psql client, a migration
 // tool, or a copy of the repository on the database host.
 //
-//go:embed schema.sql 0002_scheduled_for.sql
+//go:embed schema.sql 0002_scheduled_for.sql 0003_attempts_idempotent.sql
 var schemaFS embed.FS
 
 // migrationLockKey is the ASCII of "RESMMIGR", chosen so a colliding advisory
@@ -51,6 +51,7 @@ type migration struct {
 var migrations = []migration{
 	{version: "0001_init", file: "schema.sql"},
 	{version: "0002_scheduled_for", file: "0002_scheduled_for.sql"},
+	{version: "0003_attempts_idempotent", file: "0003_attempts_idempotent.sql"},
 }
 
 // applyMigrations brings the database up to the embedded schema.

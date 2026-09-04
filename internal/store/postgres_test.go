@@ -562,8 +562,50 @@ func TestMarkOutboxFailed(t *testing.T) {
 	if len(batch) != 1 {
 		t.Fatalf("claimed %d events, want 1", len(batch))
 	}
-	if batch[0].Attempts != 1 {
-		t.Fatalf("attempts = %d, want 1 after a claim", batch[0].Attempts)
+	// A claim leases; it does not charge. Charging here would spend a row's
+	// retry budget on merely being looked at, so a broker outage — which makes
+	// every claim fail for reasons unrelated to any row — would exhaust every
+	// budget in the table and park work that was never poison. That is not
+	// hypothetical: it is what deterministic simulation reported as twenty
+	// thousand dead-lettered rows from four hundred incidents.
+	if batch[0].Attempts != 0 {
+		t.Fatalf("attempts = %d, want 0 after a claim; a claim must not charge", batch[0].Attempts)
+	}
+
+	// A failure attributable to the row charges it and hands it back PENDING,
+	// so the budget is reachable rather than spent on the first stumble.
+	if err := p.RecordOutboxFailure(ctx, batch[0].ID, "queue rejected the payload"); err != nil {
+		t.Fatalf("RecordOutboxFailure: %v", err)
+	}
+	pendingAfter, failedAfter, err := p.OutboxDepth(ctx)
+	if err != nil {
+		t.Fatalf("OutboxDepth: %v", err)
+	}
+	if pendingAfter != 1 || failedAfter != 0 {
+		t.Fatalf("outbox depth after one charged failure = (%d, %d), want (1, 0): "+
+			"a single failure is not a verdict", pendingAfter, failedAfter)
+	}
+	recharged, err := p.ClaimOutboxBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+	if len(recharged) != 1 || recharged[0].Attempts != 1 {
+		t.Fatalf("re-claimed %d row(s) with attempts=%v, want one row at 1 attempt",
+			len(recharged), attemptsOf(recharged))
+	}
+
+	// Releasing a claim hands the row back without charging it, which is the
+	// transport-failure path: the queue was unreachable, and that says nothing
+	// about this row.
+	if err := p.ReleaseOutboxClaim(ctx, []int64{batch[0].ID}); err != nil {
+		t.Fatalf("ReleaseOutboxClaim: %v", err)
+	}
+	released, err := p.ClaimOutboxBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("claim after release: %v", err)
+	}
+	if len(released) != 1 || released[0].Attempts != 1 {
+		t.Fatalf("release charged the row: attempts=%v, want it left at 1", attemptsOf(released))
 	}
 
 	// Over-long gateway text must be truncated into the record, not lose it.
@@ -1050,4 +1092,14 @@ func longString(n int) string {
 		b[i] = 'a'
 	}
 	return string(b)
+}
+
+// attemptsOf projects a batch onto its attempt counts, so a failure message
+// says what the counters were rather than only that they were wrong.
+func attemptsOf(batch []domain.OutboxEvent) []int {
+	out := make([]int, 0, len(batch))
+	for _, ev := range batch {
+		out = append(out, ev.Attempts)
+	}
+	return out
 }
