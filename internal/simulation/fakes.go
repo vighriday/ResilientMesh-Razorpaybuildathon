@@ -83,6 +83,10 @@ type memStore struct {
 
 	incidents map[string]*domain.Incident
 	byEvent   map[string]string
+	// dueAt holds the absolute due time of every deferred incident. It lives
+	// beside the incidents map rather than inside the record so that clearing a
+	// claim is one delete rather than a mutation a caller could forget.
+	dueAt map[string]time.Time
 
 	outbox       []*outboxRow
 	nextOutboxID int64
@@ -358,6 +362,86 @@ func (s *memStore) GetIncidentByEventID(ctx context.Context, eventID string) (do
 		return domain.Incident{}, fmt.Errorf("get incident by event id: %w", ErrNotFound)
 	}
 	return *s.incidents[id], nil
+}
+
+// ScheduleIncident defers an incident. The simulated store keeps the due time
+// beside the incident rather than in a parallel map, so the two cannot be
+// cleaned up out of step — the same property the real schema gets from putting
+// the column on the row.
+func (s *memStore) ScheduleIncident(ctx context.Context, id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guard(ctx, "schedule incident"); err != nil {
+		return err
+	}
+	in, ok := s.incidents[id]
+	if !ok {
+		return fmt.Errorf("schedule incident: %w", ErrNotFound)
+	}
+	if in.State.Terminal() {
+		return nil
+	}
+	in.State = domain.IncidentScheduled
+	if s.dueAt == nil {
+		s.dueAt = map[string]time.Time{}
+	}
+	s.dueAt[id] = at
+	return nil
+}
+
+// ClaimDueIncidents takes every incident whose schedule has arrived, clearing
+// the due time as part of the claim so a second sweeper cannot take it. The
+// result is ordered by due time so a simulation replay is deterministic; map
+// iteration order here would make every trace irreproducible.
+func (s *memStore) ClaimDueIncidents(ctx context.Context, now time.Time, limit int) ([]domain.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guard(ctx, "claim due incidents"); err != nil {
+		return nil, err
+	}
+	type due struct {
+		id string
+		at time.Time
+	}
+	var ready []due
+	for id, at := range s.dueAt {
+		if !at.After(now) {
+			ready = append(ready, due{id, at})
+		}
+	}
+	sort.Slice(ready, func(i, j int) bool {
+		if !ready[i].at.Equal(ready[j].at) {
+			return ready[i].at.Before(ready[j].at)
+		}
+		return ready[i].id < ready[j].id
+	})
+	if limit > 0 && len(ready) > limit {
+		ready = ready[:limit]
+	}
+	out := make([]domain.Incident, 0, len(ready))
+	for _, d := range ready {
+		delete(s.dueAt, d.id)
+		if in := s.incidents[d.id]; in != nil {
+			out = append(out, *in)
+		}
+	}
+	return out, nil
+}
+
+// DueIncidentCount reports the past-due backlog.
+func (s *memStore) DueIncidentCount(ctx context.Context, now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guard(ctx, "count due incidents"); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, at := range s.dueAt {
+		if !at.After(now) {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *memStore) UpdateIncidentState(ctx context.Context, id string, state domain.IncidentState) error {

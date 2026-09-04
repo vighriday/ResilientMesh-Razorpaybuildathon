@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -140,6 +141,20 @@ func (s *fakeStore) counts() (incidents, outbox, audits int) {
 func (s *fakeStore) GetIncident(context.Context, string) (domain.Incident, error) {
 	panic("not used by the ingest edge")
 }
+
+// The scheduling surface is unused by this package's tests, but domain.Store is
+// one contract: a fake that implements only the convenient half would compile
+// today and fail to notice the day this package starts deferring work.
+func (s *fakeStore) ScheduleIncident(context.Context, string, time.Time) error {
+	return errors.New("fakeStore: ScheduleIncident is not exercised by these tests")
+}
+
+func (s *fakeStore) ClaimDueIncidents(context.Context, time.Time, int) ([]domain.Incident, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) DueIncidentCount(context.Context, time.Time) (int, error) { return 0, nil }
+
 func (s *fakeStore) UpdateIncidentState(context.Context, string, domain.IncidentState) error {
 	panic("not used by the ingest edge")
 }

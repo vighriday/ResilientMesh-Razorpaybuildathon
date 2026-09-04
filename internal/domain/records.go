@@ -213,6 +213,16 @@ const (
 	AuditBreakerTripped  AuditKind = "BREAKER_TRIPPED"
 	AuditBreakerClosed   AuditKind = "BREAKER_CLOSED"
 	AuditIncidentClosed  AuditKind = "INCIDENT_CLOSED"
+	// AuditIncidentScheduled records a deferred recovery and its absolute due
+	// time. Without it a delayed decision and a dropped one look identical in
+	// the ledger, which is the exact ambiguity that hid a missing sweeper.
+	AuditIncidentScheduled AuditKind = "INCIDENT_SCHEDULED"
+	// AuditOperatorAction records a human acting on the system: halting a
+	// mandate, resuming one, replaying a dead letter. It is a distinct kind
+	// rather than a reuse of the nearest automated one because "who did this,
+	// and were they a person?" is the first question asked about any mutation
+	// months later, and a ledger that cannot answer it is not an audit trail.
+	AuditOperatorAction AuditKind = "OPERATOR_ACTION"
 )
 
 // AuditEntry is one link in a hash chain. Each entry commits to its

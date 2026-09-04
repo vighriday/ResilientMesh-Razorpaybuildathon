@@ -13,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/hriday/razorpay-resilient-mesh/internal/domain"
+	"github.com/hriday/razorpay-resilient-mesh/internal/ingest"
 	"github.com/hriday/razorpay-resilient-mesh/internal/obs"
 	"github.com/hriday/razorpay-resilient-mesh/internal/queue"
 	"github.com/hriday/razorpay-resilient-mesh/internal/store"
@@ -47,6 +49,27 @@ type Config struct {
 	// SessionTTL bounds how long a session is considered live for in-session
 	// healing.
 	SessionTTL time.Duration
+	// DemoTimeScale compresses only the wall-clock wait before a scheduled
+	// retry, never the decision that produced it.
+	//
+	// A correct production backoff is minutes to hours, so a demonstration that
+	// respected it would show decisions and never an outcome. The compression
+	// is applied here, at the point of waiting, rather than in the gatekeeper,
+	// because the gate's delays include regulatory floors — RBI's cooling
+	// window is a legal minimum, and a system that could configure its way
+	// under it would have no invariant at all. The real delay and the scale are
+	// both written to the ledger, so a compressed run is never mistaken for a
+	// production one. Zero or one means no compression.
+	DemoTimeScale float64
+	// SweepInterval is how often deferred recoveries are checked for being due.
+	// It bounds how late a scheduled retry can be, so it is the resolution of
+	// every delay the gatekeeper computes: a five-minute sweep would make a
+	// thirty-second backoff meaningless.
+	SweepInterval time.Duration
+	// SweepBatch bounds one sweep. Unbounded, a backlog accumulated during an
+	// outage would be released in a single burst at the moment the issuer
+	// recovers, which is when it can least absorb one.
+	SweepBatch int
 	// RetryBudgetPerMinute caps total outbound attempts across all incidents.
 	// Per-incident stop rules bound one lifecycle; only a global budget bounds
 	// aggregate load during a mass outage, which is exactly when every incident
@@ -78,6 +101,15 @@ func (c Config) withDefaults() Config {
 	}
 	if c.SessionTTL <= 0 {
 		c.SessionTTL = 15 * time.Minute
+	}
+	if c.DemoTimeScale < 1 || math.IsNaN(c.DemoTimeScale) {
+		c.DemoTimeScale = 1
+	}
+	if c.SweepInterval <= 0 {
+		c.SweepInterval = 5 * time.Second
+	}
+	if c.SweepBatch <= 0 {
+		c.SweepBatch = 128
 	}
 	if c.RetryBudgetPerMinute <= 0 {
 		c.RetryBudgetPerMinute = 600
@@ -187,6 +219,15 @@ func (p *Pool) Run(ctx context.Context) error {
 		p.reclaimLoop(ctx)
 	}()
 
+	// The sweeper is part of the pool rather than a separate process because
+	// the work it produces is this pool's work. A scheduler deployable on its
+	// own is a scheduler that will one day run without a consumer.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		p.sweepDueLoop(ctx)
+	}()
+
 	wg.Wait()
 	p.deps.Log.Info("worker pool stopped")
 	return nil
@@ -277,6 +318,12 @@ func (p *Pool) park(ctx context.Context, msg domain.QueueMessage, cause string) 
 func (p *Pool) Handle(ctx context.Context, msg domain.QueueMessage) error {
 	var queued struct {
 		IncidentID string `json:"incident_id"`
+		// Due marks a redelivery produced by the sweeper because a previously
+		// computed delay has now elapsed. Without it the pipeline never
+		// terminates: every redelivery re-derives a fresh backoff, which is
+		// always in the future, so the incident is deferred again forever and
+		// the ledger fills with correct decisions that never execute.
+		Due bool `json:"due,omitempty"`
 	}
 	if err := json.Unmarshal(msg.Payload, &queued); err != nil {
 		// A payload this process wrote and cannot now read is poison, not a
@@ -359,7 +406,7 @@ func (p *Pool) Handle(ctx context.Context, msg domain.QueueMessage) error {
 		return nil
 	}
 
-	return p.execute(ctx, incident, cmd, snapshot)
+	return p.execute(ctx, incident, cmd, snapshot, queued.Due)
 }
 
 // diagnose produces an advisory proposal, skipping inference entirely when the
@@ -434,7 +481,13 @@ func (p *Pool) diagnose(
 }
 
 // execute performs the command's side effect and records the outcome.
-func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain.SanitizedCommand, snap domain.TelemetrySnapshot) error {
+// execute performs the command, or defers it if its delay has not been served.
+//
+// dueNow says the sweeper produced this delivery because a delay already
+// elapsed. A command's delay is served once; re-serving it on every redelivery
+// is an infinite loop dressed as exponential backoff.
+func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain.SanitizedCommand,
+	snap domain.TelemetrySnapshot, dueNow bool) error {
 	// A recurring debit may not proceed without its notice. The notice is sent
 	// first and its failure aborts the debit, because believing we notified
 	// when we did not is the precise condition the rule exists to prevent.
@@ -447,14 +500,34 @@ func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain
 		})
 	}
 
-	// A scheduled command is not executed now. Marking it scheduled and acking
-	// is correct: the delay is absolute, so it cannot drift, and the scheduler
-	// picks it up when due.
-	if cmd.DelaySeconds > 0 && cmd.ExecuteAfter.After(p.deps.Clock.Now()) {
+	// A scheduled command is not executed now: the due time is written to the
+	// incident and the message is acknowledged, and the sweep loop below brings
+	// it back when it falls due.
+	//
+	// The due time is absolute rather than a duration, so it cannot drift
+	// across a redelivery, a restart or a deploy. It is stored in the same row
+	// as the decision, so a schedule can never survive a rollback that undid
+	// the decision that produced it.
+	if !dueNow && cmd.DelaySeconds > 0 && cmd.ExecuteAfter.After(p.deps.Clock.Now()) {
 		p.count("worker.scheduled")
-		if err := p.deps.Store.UpdateIncidentState(ctx, incident.ID, domain.IncidentScheduled); err != nil {
+		due := p.dueAt(cmd)
+		if err := p.deps.Store.ScheduleIncident(ctx, incident.ID, due); err != nil {
 			return fmt.Errorf("worker: scheduling incident %s: %w", incident.ID, err)
 		}
+		detail := map[string]any{
+			"execute_after": cmd.ExecuteAfter.UTC().Format(time.RFC3339),
+			"delay_seconds": cmd.DelaySeconds,
+			"action":        string(cmd.Action),
+			"rail":          string(cmd.TargetRail),
+		}
+		if p.cfg.DemoTimeScale > 1 {
+			// Recorded explicitly. A ledger that showed only the compressed
+			// time would misrepresent what the system decided, and one that
+			// showed only the real time would misrepresent what it did.
+			detail["demo_time_scale"] = p.cfg.DemoTimeScale
+			detail["demo_execute_after"] = due.UTC().Format(time.RFC3339)
+		}
+		p.audit(ctx, domain.AuditIncidentScheduled, incident.ID, detail)
 		return nil
 	}
 
@@ -608,6 +681,99 @@ func (p *Pool) sessionLive(ctx context.Context, orderID string) bool {
 
 // reclaimLoop sweeps up messages stranded by a consumer that stopped
 // acknowledging, which is what a crashed worker leaves behind.
+// dueAt is when the worker will actually come back for a scheduled command.
+//
+// It equals the command's own ExecuteAfter in every deployment except a
+// compressed demonstration. The gatekeeper's decision is never altered: only
+// the wait is shortened, and only when an operator asked for that explicitly.
+func (p *Pool) dueAt(cmd domain.SanitizedCommand) time.Time {
+	if p.cfg.DemoTimeScale <= 1 {
+		return cmd.ExecuteAfter
+	}
+	now := p.deps.Clock.Now()
+	wait := cmd.ExecuteAfter.Sub(now)
+	if wait <= 0 {
+		return cmd.ExecuteAfter
+	}
+	compressed := time.Duration(float64(wait) / p.cfg.DemoTimeScale)
+	// A floor keeps compression from collapsing a schedule into "now", which
+	// would turn a deferred retry into an immediate one and stop demonstrating
+	// the thing it exists to demonstrate.
+	if compressed < time.Second {
+		compressed = time.Second
+	}
+	return now.Add(compressed)
+}
+
+// sweepDueLoop returns deferred recoveries to the queue when they fall due.
+//
+// Without it every delayed command is a decision that was audited and never
+// executed. The loop is deliberately in the worker rather than in a separate
+// scheduler process: the work it produces is worker work, and a scheduler that
+// can be deployed independently of the thing that consumes its output is a
+// scheduler that will one day be running alone.
+func (p *Pool) sweepDueLoop(ctx context.Context) {
+	t := time.NewTicker(p.cfg.SweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			p.sweepDue(ctx)
+		}
+	}
+}
+
+// sweepDue claims one batch of due incidents and re-publishes each.
+//
+// A claim clears the incident's due time, so a failure to publish after a
+// successful claim would strand it. That is why a publish failure is logged at
+// error level and the incident is put back on the clock rather than dropped:
+// the sweep is the only thing standing between a deferred recovery and silence.
+func (p *Pool) sweepDue(ctx context.Context) {
+	now := p.deps.Clock.Now()
+	due, err := p.deps.Store.ClaimDueIncidents(ctx, now, p.cfg.SweepBatch)
+	if err != nil {
+		p.deps.Log.Warn("could not claim due incidents", "error", err)
+		return
+	}
+	if len(due) == 0 {
+		return
+	}
+	p.add("worker.swept_due", uint64(len(due)))
+
+	for _, in := range due {
+		payload, err := json.Marshal(map[string]any{"incident_id": in.ID, "due": true})
+		if err != nil {
+			// Unreachable for a struct literal of strings, and still handled:
+			// silently skipping here would lose the incident permanently.
+			p.deps.Log.Error("could not encode a due incident", "incident_id", in.ID, "error", err)
+			continue
+		}
+		ev := domain.OutboxEvent{
+			IncidentID: in.ID,
+			Topic:      ingest.TopicIncidentFailed,
+			Payload:    payload,
+			CreatedAt:  now,
+		}
+		if err := p.deps.Queue.Publish(ctx, ingest.TopicIncidentFailed, ev); err != nil {
+			p.deps.Log.Error("could not re-queue a due incident; putting it back on the clock",
+				"incident_id", in.ID, "error", err)
+			// Re-arm rather than lose it. A short delay is right here: the
+			// failure was in the queue, not in the schedule, so the original
+			// due time has already passed and the only question is when to try
+			// publishing again.
+			if reErr := p.deps.Store.ScheduleIncident(ctx, in.ID, now.Add(p.cfg.SweepInterval)); reErr != nil {
+				p.deps.Log.Error("could not re-arm a due incident; it is now stranded",
+					"incident_id", in.ID, "error", reErr)
+			}
+			continue
+		}
+		p.count("worker.requeued_due")
+	}
+}
+
 func (p *Pool) reclaimLoop(ctx context.Context) {
 	t := time.NewTicker(p.cfg.ReclaimInterval)
 	defer t.Stop()

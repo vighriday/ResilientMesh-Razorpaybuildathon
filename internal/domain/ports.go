@@ -47,6 +47,19 @@ type Store interface {
 	IncrementIncidentAttempts(ctx context.Context, id string) (int, error)
 	ListIncidents(ctx context.Context, limit int) ([]Incident, error)
 
+	// ScheduleIncident defers an incident until at, recording the due time
+	// durably. A deferred recovery that lives only in memory is lost on the
+	// next deploy, and a deploy during an outage is exactly when the most work
+	// is deferred.
+	ScheduleIncident(ctx context.Context, id string, at time.Time) error
+	// ClaimDueIncidents takes ownership of incidents whose schedule has
+	// arrived. Implementations must use row-level locking that skips locked
+	// rows, so several sweepers can run without claiming the same incident.
+	ClaimDueIncidents(ctx context.Context, now time.Time, limit int) ([]Incident, error)
+	// DueIncidentCount reports the past-due backlog, which is invisible from
+	// queue depth: a sweeper that has stopped shows an empty queue.
+	DueIncidentCount(ctx context.Context, now time.Time) (int, error)
+
 	// ClaimOutboxBatch locks up to limit pending rows for this relay instance.
 	// Implementations must use row-level locking that skips locked rows, so
 	// multiple relays can run concurrently without double dispatch.

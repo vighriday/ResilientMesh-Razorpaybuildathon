@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -81,6 +82,20 @@ func (s *fakeStore) GetIncident(context.Context, string) (domain.Incident, error
 func (s *fakeStore) GetIncidentByEventID(context.Context, string) (domain.Incident, error) {
 	panic("unused")
 }
+
+// The scheduling surface is unused by this package's tests, but domain.Store is
+// one contract: a fake that implements only the convenient half would compile
+// today and fail to notice the day this package starts deferring work.
+func (s *fakeStore) ScheduleIncident(context.Context, string, time.Time) error {
+	return errors.New("fakeStore: ScheduleIncident is not exercised by these tests")
+}
+
+func (s *fakeStore) ClaimDueIncidents(context.Context, time.Time, int) ([]domain.Incident, error) {
+	return nil, nil
+}
+
+func (s *fakeStore) DueIncidentCount(context.Context, time.Time) (int, error) { return 0, nil }
+
 func (s *fakeStore) UpdateIncidentState(context.Context, string, domain.IncidentState) error {
 	panic("unused")
 }
