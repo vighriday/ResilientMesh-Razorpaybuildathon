@@ -959,9 +959,13 @@ func (s *Sim) scheduleRelay(ctx context.Context, name string, delay time.Duratio
 }
 
 func (s *Sim) relayTick(ctx context.Context, name string) {
-	if d := s.faults.QueueOutage(); d > 0 {
-		s.queue.takeDown(d)
-		s.emit("queue_outage", name, Fi("ms", d.Milliseconds()))
+	// An outage is an event that starts, not a per-tick extension, so the draw
+	// is only taken while the broker is serving. See memQueue.up.
+	if s.queue.up() {
+		if d := s.faults.QueueOutage(); d > 0 {
+			s.queue.takeDown(d)
+			s.emit("queue_outage", name, Fi("ms", d.Milliseconds()))
+		}
 	}
 	batch, err := s.store.ClaimOutboxBatch(ctx, relayBatchSize)
 	if err != nil {
@@ -969,12 +973,41 @@ func (s *Sim) relayTick(ctx context.Context, name string) {
 		return
 	}
 	var dispatched []int64
-	for _, ev := range batch {
+	for i, ev := range batch {
 		if err := s.queue.Publish(ctx, ev.Topic, ev); err != nil {
-			// The row keeps its claim lease until it expires, then becomes
-			// claimable again. Marking it failed increments the attempt counter
-			// that eventually dead-letters a genuinely poisonous row.
-			if mErr := s.store.MarkOutboxFailed(ctx, ev.ID, err.Error()); mErr != nil {
+			// Classify the failure exactly as internal/outbox/relay.go does.
+			//
+			// A broker outage makes every publish fail for reasons that have
+			// nothing to do with any particular row, so charging a retry budget
+			// for it destroys work that was never poison — and because the
+			// budget is small and an outage is long, it destroys all of it. The
+			// queue is therefore probed: if it answers, this row failed on its
+			// own merits and the attempt is charged; if it does not, the rest of
+			// the batch is handed back uncharged and the next tick rides the
+			// outage out. Charging unconditionally here dead-lettered a whole
+			// backlog on every chaos profile, and — worse — meant the harness
+			// was exercising a relay the system does not run.
+			if pErr := s.queue.Ping(ctx); pErr != nil {
+				rest := make([]int64, 0, len(batch)-i)
+				for _, remaining := range batch[i:] {
+					rest = append(rest, remaining.ID)
+				}
+				if rErr := s.store.ReleaseOutboxClaim(ctx, rest); rErr != nil {
+					s.emit("relay_release_failed", name, Fi("rows", int64(len(rest))))
+				}
+				s.emit("queue_transport_failure", name, Fi("rows", int64(len(rest))))
+				break
+			}
+			// The queue is reachable and this row still would not publish, so
+			// the row is the problem. Only an exhausted row is parked; a row
+			// with budget left goes back to the pending pool.
+			var mErr error
+			if ev.Attempts+1 < maxOutboxPublishAttempts {
+				mErr = s.store.RecordOutboxFailure(ctx, ev.ID, err.Error())
+			} else {
+				mErr = s.store.MarkOutboxFailed(ctx, ev.ID, err.Error())
+			}
+			if mErr != nil {
 				s.emit("relay_mark_failed_error", name)
 			}
 			s.emit("publish_failed", ev.IncidentID, F("relay", name))

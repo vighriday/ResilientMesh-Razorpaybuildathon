@@ -119,7 +119,7 @@ func (c MandateCategory) AFACeilingPaisa() int64 {
 // ParseMandateCategory normalises free-form category input, defaulting to the
 // stricter general ceiling.
 func ParseMandateCategory(s string) MandateCategory {
-	switch MandateCategory(strings.ToLower(strings.TrimSpace(s))) {
+	switch MandateCategory(foldLower(strings.TrimSpace(s))) {
 	case CategoryInsurance:
 		return CategoryInsurance
 	case CategoryMutualFund:

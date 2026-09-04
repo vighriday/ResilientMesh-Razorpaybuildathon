@@ -63,7 +63,7 @@ func (a Action) Valid() bool { _, ok := allActions[a]; return ok }
 // ParseAction normalises model output into a known action. Anything
 // unrecognised becomes ActionAbstain: the system fails closed, never open.
 func ParseAction(s string) Action {
-	a := Action(strings.ToUpper(strings.TrimSpace(s)))
+	a := Action(foldUpper(strings.TrimSpace(s)))
 	if a.Valid() {
 		return a
 	}
@@ -94,7 +94,7 @@ var allClasses = map[FailureClass]struct{}{
 func (c FailureClass) Valid() bool { _, ok := allClasses[c]; return ok }
 
 func ParseFailureClass(s string) FailureClass {
-	c := FailureClass(strings.ToUpper(strings.TrimSpace(s)))
+	c := FailureClass(foldUpper(strings.TrimSpace(s)))
 	if c.Valid() {
 		return c
 	}

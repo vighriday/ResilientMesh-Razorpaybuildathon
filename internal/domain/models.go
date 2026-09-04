@@ -265,13 +265,61 @@ var SoftDeclineCodes = map[string]struct{}{
 	"mandate_not_active":    {},
 }
 
+// foldLower and foldUpper case-fold ASCII letters and leave every other byte
+// alone. Every parser over a closed set in this package folds through them.
+//
+// strings.ToLower and strings.ToUpper apply full Unicode case mapping, which
+// maps characters outside ASCII *into* ASCII: U+017F LATIN SMALL LETTER LONG S
+// uppercases to 'S', and U+212A KELVIN SIGN lowercases to 'k'. Every identifier
+// in this package's closed sets is ASCII, so a Unicode fold can never repair a
+// member — it can only admit a non-member. That is a fail-open on the boundary
+// this package exists to defend: the gatekeeper parses the model's own
+// recommended_action, failure_classification and suggested_fallback_rail through
+// these functions, so "AſYNC_EXPONENTIAL_RETRY" folding to a valid retry
+// instead of degrading to an abstention hands a prompt-injected response the
+// authority the closed set was supposed to deny it. Folding must only ever be
+// able to add a terminal halt, never a recovery licence, so it stays ASCII.
+const asciiCaseDelta = 'a' - 'A'
+
+func foldLower(s string) string {
+	var b []byte
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c >= 'A' && c <= 'Z' {
+			if b == nil {
+				b = []byte(s)
+			}
+			b[i] = c + asciiCaseDelta
+		}
+	}
+	if b == nil {
+		return s
+	}
+	return string(b)
+}
+
+func foldUpper(s string) string {
+	var b []byte
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c >= 'a' && c <= 'z' {
+			if b == nil {
+				b = []byte(s)
+			}
+			b[i] = c - asciiCaseDelta
+		}
+	}
+	if b == nil {
+		return s
+	}
+	return string(b)
+}
+
 // normaliseCode folds an error code the same way ParseAction and ParseRail fold
 // their inputs. Without it the taxonomy lookups are exact map hits, so
 // "CARD_EXPIRED" or a code with a stray space is not recognised as terminal and
 // silently buys a retry on a dead instrument. Consistent normalisation across
 // every parser is what stops that class of bug.
 func normaliseCode(code string) string {
-	return strings.ToLower(strings.TrimSpace(code))
+	return foldLower(strings.TrimSpace(code))
 }
 
 func IsTerminalDecline(code string) bool {
@@ -329,7 +377,7 @@ func (r Rail) Valid() bool { _, ok := allRails[r]; return ok }
 // ParseRail normalises free-form model output into a known rail, defaulting to
 // RailNone. The model is never permitted to invent a rail identifier.
 func ParseRail(s string) Rail {
-	r := Rail(strings.ToLower(strings.TrimSpace(s)))
+	r := Rail(foldLower(strings.TrimSpace(s)))
 	if r.Valid() {
 		return r
 	}

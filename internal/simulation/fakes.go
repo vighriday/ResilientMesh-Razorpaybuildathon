@@ -1156,6 +1156,21 @@ func (q *memQueue) available() error {
 	return nil
 }
 
+// up reports whether the broker is currently serving.
+//
+// The outage draw is guarded on this. ChaosProfile.QueueOutage is documented as
+// "the chance, per relay tick, that the broker goes down", and taking an
+// already-down broker down again is not that event: it silently extends the
+// current outage instead of starting a new one. Because relay ticks are 250ms
+// and a storm outage averages ninety seconds, drawing unconditionally made
+// outage time accumulate far faster than it elapsed and the broker never came
+// back, which is what made the storm profile unable to finish a run.
+func (q *memQueue) up() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.available() == nil
+}
+
 // takeDown puts the broker out of service for d. The API must keep accepting
 // webhooks throughout, which is the behaviour the outbox exists to make
 // possible and the single most demo-able property in the system.
