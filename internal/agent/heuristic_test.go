@@ -50,6 +50,11 @@ func diagnose(t *testing.T, dc domain.DiagnosticContext) domain.DiagnosticPropos
 	return p
 }
 
+// unruledCode is a decline no taxonomy set contains, so no rule can fire on it.
+// The evidence-isolation cases need a code that contributes nothing, or they
+// would pass for the wrong reason.
+const unruledCode = "issuer_returned_an_unmapped_status"
+
 func TestHeuristicRules(t *testing.T) {
 	t.Parallel()
 
@@ -152,8 +157,60 @@ func TestHeuristicRules(t *testing.T) {
 			wantConf:   confPSPDegradation,
 		},
 		{
+			// A stated cause is exactly what a rule table can act on, and the
+			// taxonomy says so: a soft decline is "recoverable but
+			// unambiguous". The delay is six hours because the payer cannot
+			// conjure a balance in ten minutes, and a shorter one would retry
+			// the same empty account.
+			name:       "insufficient funds retries across a salary credit rather than immediately",
+			dc:         withCode(healthy(), "insufficient_funds"),
+			wantClass:  domain.ClassInsufficientFunds,
+			wantAction: domain.ActionAsyncRetry,
+			wantRail:   domain.RailNone,
+			wantDelay:  delayInsufficientFunds,
+			wantConf:   confSoftDecline,
+		},
+		{
+			// An expired collect request needs the payer to act again, which is
+			// a minutes problem, not an hours one.
+			name:       "an expired collect request comes back in minutes",
+			dc:         withCode(healthy(), "upi_collect_expired"),
+			wantClass:  domain.ClassCustomerAction,
+			wantAction: domain.ActionAsyncRetry,
+			wantRail:   domain.RailNone,
+			wantDelay:  delaySoftDecline,
+			wantConf:   confSoftDecline,
+		},
+		{
+			// No party declined anything; something upstream could not answer.
+			// One cheap retry, and the gatekeeper's ceiling stops it there.
+			name:       "an upstream technical error takes one cheap retry",
+			dc:         withCode(healthy(), "bank_technical_error"),
+			wantClass:  domain.ClassTransientDegradation,
+			wantAction: domain.ActionAsyncRetry,
+			wantRail:   domain.RailNone,
+			wantDelay:  delayInfraFault,
+			wantConf:   confInfraFault,
+		},
+		{
+			// The card number changed; the funding account did not. Retrying
+			// the stored credential repeats the decline, so the only action
+			// that can change the outcome is re-presenting the token.
+			name:       "an expired card is refreshed rather than retried",
+			dc:         withCode(healthy(), "card_expired"),
+			wantClass:  domain.ClassInstrumentStale,
+			wantAction: domain.ActionInstrumentRefresh,
+			wantRail:   domain.RailNone,
+			wantDelay:  0,
+			wantConf:   confSoftDecline,
+		},
+		{
+			// The evidence-isolation cases below deliberately use a code with
+			// no rule of its own. Pairing irrelevant evidence with a code that
+			// would have fired anyway proves nothing about whether the evidence
+			// was used.
 			name:       "a downtime notice for another issuer is not evidence about this one",
-			dc:         withNotice(healthy(), domain.SeverityHigh, false, domain.DowntimeStarted),
+			dc:         withCode(withNotice(healthy(), domain.SeverityHigh, false, domain.DowntimeStarted), unruledCode),
 			wantClass:  domain.ClassUnknown,
 			wantAction: domain.ActionAbstain,
 			wantRail:   domain.RailNone,
@@ -162,7 +219,7 @@ func TestHeuristicRules(t *testing.T) {
 		},
 		{
 			name:       "a resolved notice is not evidence either",
-			dc:         withNotice(healthy(), domain.SeverityHigh, true, domain.DowntimeResolved),
+			dc:         withCode(withNotice(healthy(), domain.SeverityHigh, true, domain.DowntimeResolved), unruledCode),
 			wantClass:  domain.ClassUnknown,
 			wantAction: domain.ActionAbstain,
 			wantRail:   domain.RailNone,
@@ -171,7 +228,7 @@ func TestHeuristicRules(t *testing.T) {
 		},
 		{
 			name:       "an unrecognised code with no evidence abstains",
-			dc:         withCode(healthy(), "insufficient_funds"),
+			dc:         withCode(healthy(), unruledCode),
 			wantClass:  domain.ClassUnknown,
 			wantAction: domain.ActionAbstain,
 			wantRail:   domain.RailNone,
@@ -252,6 +309,10 @@ func TestHeuristicConfidencesAreActionable(t *testing.T) {
 		degradedIssuer(),
 		withCode(healthy(), "payment_timed_out"),
 		withCode(healthy(), "upi_psp_error"),
+		withCode(healthy(), "insufficient_funds"),
+		withCode(healthy(), "upi_collect_expired"),
+		withCode(healthy(), "bank_technical_error"),
+		withCode(healthy(), "card_expired"),
 	}
 	for _, dc := range acting {
 		got := diagnose(t, dc)
@@ -262,7 +323,10 @@ func TestHeuristicConfidencesAreActionable(t *testing.T) {
 			t.Errorf("confidence %v claims more precision than a rule table has", got.ConfidenceScore)
 		}
 	}
-	if got := diagnose(t, withCode(healthy(), "insufficient_funds")); got.ConfidenceScore != 0 {
+	// An abstention must score zero, not merely low. A tier that abstained at
+	// 0.4 would be indistinguishable from one that acted weakly once a future
+	// deployment lowered the floor, and the floor is a configuration value.
+	if got := diagnose(t, withCode(healthy(), unruledCode)); got.ConfidenceScore != 0 {
 		t.Errorf("abstention confidence = %v, want 0", got.ConfidenceScore)
 	}
 }

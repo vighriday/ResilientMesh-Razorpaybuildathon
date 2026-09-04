@@ -36,6 +36,18 @@ const (
 	// but PSP faults and issuer faults are routinely reported under the same
 	// code, so it is not as informative as it looks.
 	confPSPDegradation = 0.68
+
+	// A soft decline states its own cause. The taxonomy calls this set
+	// "recoverable but unambiguous", and acting on a stated cause is what a
+	// rule table is actually good at, so these sit at the same level as a
+	// measured degradation rather than below it.
+	confSoftDecline = 0.66
+
+	// An ambiguous infrastructure fault against telemetry that is not yet
+	// informative. The code says a machine failed rather than a decision was
+	// made, which is enough to justify one cheap retry and not enough to
+	// justify more; the confidence says exactly that.
+	confInfraFault = 0.60
 )
 
 // Backoff windows for the heuristic tier. The policy engine computes the real
@@ -56,7 +68,39 @@ const (
 	// PSP faults typically clear faster than issuer outages but slower than a
 	// transient network blip.
 	delayPSPDegradation = int64(180)
+
+	// A stated soft decline needs the payer, not the issuer, to change
+	// something: find funds, read a fresh OTP, approve a collect request. Ten
+	// minutes is long enough for that and short enough to stay inside the
+	// purchase intent.
+	delaySoftDecline = int64(600)
+
+	// Insufficient funds is the one soft decline where the payer cannot act
+	// immediately. Retrying in minutes retries the same empty balance; six
+	// hours crosses a salary credit or an incoming transfer, which is the event
+	// that actually changes the outcome.
+	delayInsufficientFunds = int64(6 * 3600)
+
+	// An infrastructure fault is expected to clear on its own. Long enough to
+	// miss the failing deploy or the restarting node, short enough that the
+	// payer has not moved on.
+	delayInfraFault = int64(60)
 )
+
+// infraFaultCodes are the ambiguous codes that name a machine failure rather
+// than a decision. Every one of them is the payments equivalent of a 5xx: no
+// party has declined anything, something upstream was unable to answer.
+//
+// They are kept as an explicit set rather than derived from IsAmbiguous because
+// the two sets are not the same. "payment_pending" and "issuer_down" are also
+// ambiguous, but the first is not a failure yet and the second is a declared
+// outage; retrying either on a one-minute timer would be wrong.
+var infraFaultCodes = map[string]struct{}{
+	"bank_technical_error":    {},
+	"gateway_technical_error": {},
+	"gateway_error":           {},
+	"server_error":            {},
+}
 
 // morphPreference is the deterministic order in which the heuristic offers an
 // alternative rail. UPI intent first because it has the highest completion rate
@@ -196,6 +240,71 @@ func (h *Heuristic) classify(dc domain.DiagnosticContext) domain.DiagnosticPropo
 		}
 		return morphIfPossible(p, dc, "a live session can be moved off the failing PSP immediately")
 
+	case domain.IsRefreshable(dc.ErrorCode):
+		// The instrument, not the transaction, is what failed. Retrying the
+		// same credential repeats the same decline; re-presenting through a
+		// network token is the only action that can change the outcome, and RBI
+		// card-on-file tokenization means the token already exists.
+		return domain.DiagnosticProposal{
+			IncidentID:            dc.IncidentID,
+			FailureClassification: domain.ClassInstrumentStale,
+			ConfidenceScore:       confSoftDecline,
+			RecommendedAction:     domain.ActionInstrumentRefresh,
+			RecommendedDelaySec:   0,
+			SuggestedFallbackRail: domain.RailNone,
+			InferredRootCause: fmt.Sprintf(
+				"stored credential for issuer %s is stale rather than invalid", issuer),
+			ReasoningTrace: fmt.Sprintf(
+				"rule=instrument_refresh issuer=%s code=%s; the funding account did not go away, only the "+
+					"credential did, so the network token is re-presented instead of the stored card",
+				issuer, sanitizeToken(dc.ErrorCode, maxCodeLen)),
+		}
+
+	case domain.IsSoftDecline(dc.ErrorCode):
+		// A soft decline states its cause, which is why the taxonomy comment
+		// says the policy engine handles these without the model. What varies
+		// is only when to come back, and that is a function of who has to act.
+		delay, class, why := softDeclinePlan(dc.ErrorCode)
+		p := domain.DiagnosticProposal{
+			IncidentID:            dc.IncidentID,
+			FailureClassification: class,
+			ConfidenceScore:       confSoftDecline,
+			RecommendedAction:     domain.ActionAsyncRetry,
+			RecommendedDelaySec:   delay,
+			SuggestedFallbackRail: domain.RailNone,
+			InferredRootCause:     fmt.Sprintf("%s on issuer %s", why, issuer),
+			ReasoningTrace: fmt.Sprintf(
+				"rule=soft_decline code=%s issuer=%s delay=%ds; the decline names its own cause, so the only "+
+					"open question is when the payer can act on it",
+				sanitizeToken(dc.ErrorCode, maxCodeLen), issuer, delay),
+		}
+		// A live session is worth more than any schedule: a payer who is still
+		// on the page can be moved to a rail that does not need the thing that
+		// just failed.
+		return morphIfPossible(p, dc, "the payer is still present, so a rail that avoids the failed step wins")
+
+	case isInfraFault(dc.ErrorCode):
+		// No party declined anything here; something upstream could not answer.
+		// One cheap retry is the textbook response, and the gatekeeper's
+		// attempt ceiling is what stops it becoming an unbounded one.
+		p := domain.DiagnosticProposal{
+			IncidentID:            dc.IncidentID,
+			FailureClassification: domain.ClassTransientDegradation,
+			ConfidenceScore:       confInfraFault,
+			RecommendedAction:     domain.ActionAsyncRetry,
+			RecommendedDelaySec:   delayInfraFault,
+			SuggestedFallbackRail: domain.RailNone,
+			InferredRootCause: fmt.Sprintf(
+				"upstream infrastructure fault at %s with no decline decision recorded", issuer),
+			ReasoningTrace: fmt.Sprintf(
+				"rule=infra_fault code=%s issuer=%s attempts=%d success_rate=%.2f; the code reports an "+
+					"inability to answer rather than a refusal, and telemetry is not yet informative enough "+
+					"to say more",
+				sanitizeToken(dc.ErrorCode, maxCodeLen), issuer, dc.Telemetry.Attempts,
+				round3(dc.Telemetry.SuccessRate)),
+		}
+		return morphIfPossible(p, dc, "the failing path is upstream of the payer, so another rail avoids it")
+
 	default:
 		// Abstaining is the whole point of the tier's last branch: an
 		// unrecognised code with no supporting evidence is not something a rule
@@ -204,6 +313,45 @@ func (h *Heuristic) classify(dc domain.DiagnosticContext) domain.DiagnosticPropo
 			fmt.Sprintf("no heuristic rule matches error code %s with the available evidence",
 				sanitizeToken(dc.ErrorCode, maxCodeLen)),
 			domain.ModeHeuristic)
+	}
+}
+
+// isInfraFault reports whether the code names a machine failure.
+func isInfraFault(code string) bool {
+	_, ok := infraFaultCodes[normToken(code, maxCodeLen)]
+	return ok
+}
+
+// softDeclinePlan returns the delay, classification and phrasing for one soft
+// decline.
+//
+// The delays differ because the actor differs. An OTP failure needs the payer
+// to read a fresh message, which takes a minute; an empty balance needs money
+// to arrive, which takes hours. A single delay for both would be wrong for one
+// of them, and the one it would be wrong for is the expensive one.
+func softDeclinePlan(code string) (delay int64, class domain.FailureClass, why string) {
+	switch normToken(code, maxCodeLen) {
+	case "insufficient_funds":
+		return delayInsufficientFunds, domain.ClassInsufficientFunds,
+			"balance was short at the moment of the debit"
+	case "invalid_otp", "incorrect_otp", "authentication_failed":
+		return delaySoftDecline, domain.ClassCustomerAction,
+			"authentication step was not completed"
+	case "upi_collect_expired":
+		return delaySoftDecline, domain.ClassCustomerAction,
+			"collect request expired before the payer approved it"
+	case "mandate_not_active":
+		// Not a payment problem at all: the mandate needs re-registration, and
+		// no retry schedule fixes that. Classified as customer action so the
+		// gatekeeper's recurring rules still apply.
+		return delaySoftDecline, domain.ClassCustomerAction,
+			"mandate is not currently active"
+	default:
+		// Reached only if SoftDeclineCodes gains a member this function has not
+		// been taught about. The conservative delay is the right default: it is
+		// wrong only in being slower than necessary.
+		return delaySoftDecline, domain.ClassCustomerAction,
+			"decline reported a payer-side cause"
 	}
 }
 
