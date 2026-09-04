@@ -5,6 +5,12 @@
 > incident followed end to end, and all 538 entries of that run's audit ledger. The page
 > re-derives every SHA-256 digest in your browser and lets you plant a forgery in the chain,
 > so the tamper-evidence claim can be checked without running anything at all.
+>
+> The same page carries the **real gatekeeper compiled to WebAssembly**. Load it and
+> send it proposals no model would produce: an amount smuggled into the JSON, an
+> action spelled with U+017F, a mandate debit inside RBI's cooling window. It runs
+> in your browser, and eleven recorded decisions are re-derived there and compared
+> field by field with what the server binary produced.
 
 
 For a reviewer with no prior context. Everything below runs on a laptop with no
@@ -442,3 +448,24 @@ If you read nothing else, read these three:
 Then: [`../docs/ARCHITECTURE.md`](ARCHITECTURE.md),
 [`../docs/THREAT_MODEL.md`](THREAT_MODEL.md),
 [`../decisions.md`](../decisions.md).
+
+
+## Producing a dispute bundle
+
+A merchant asked to justify a retry, or a compliance team asked whether a mandate
+debit was permitted, needs one payment's history and a way to show the record is
+genuine. Handing over the whole ledger is not an option: it contains every other
+customer's traffic.
+
+```bash
+go run ./cmd/meshctl evidence pay_XSeuU4A6Kdc90b --out dispute.json
+```
+
+The bundle carries that payment's incident, its attempts, its mandate state where
+there is one, and every ledger entry that mentions it, each with a Merkle inclusion
+proof of about ten sibling hashes. It is plain JSON with the verification recipe
+written into it, it checks offline with no database and no API call, and the
+siblings are digests, so it discloses nothing about any other payment.
+
+If the chain is already broken the command refuses to emit anything, because a
+valid-looking proof of membership in a compromised ledger is worse than no proof.

@@ -252,7 +252,37 @@ thing twice is a cheap test that almost nobody writes.
 
 ---
 
-## 9. OPEN, the reconciler amplifies during an outage
+## 9. A conformance vector that made the gate look like it permitted a stolen card
+
+**Found by:** running the vectors and reading the answers.
+
+The browser gatekeeper ships with recorded inputs and the answers the server
+binary gave them, so a reader can watch two builds of one package agree. One of
+those vectors was written to show a terminal decline being refused, using
+`error_code: "card_stolen"`. The gate permitted a retry.
+
+That looked, for about a minute, like a serious defect: a system that would
+spend a gateway fee retrying a card the issuer had reported stolen.
+
+It was the fixture. The taxonomy's code is `card_lost_or_stolen`. An unknown
+code is deliberately not treated as terminal, because inventing terminality for
+strings nobody recognises is how a recovery system silently stops recovering.
+The gate did the right thing with the input it was given, and the input was
+wrong.
+
+**Fixed by** using the real code, at which point the vector refuses as intended.
+
+**Lesson.** The vectors earn their place twice over. They exist to prove the
+WebAssembly build matches the server build, and the first thing they actually
+caught was an error in my own understanding of the taxonomy. Worth noting that
+the mistake was legible only because the expected answer is *recorded from a
+real run* rather than asserted by hand: had I written "expect
+PERMANENT_ABSTAIN", the suite would have gone red with no indication of which
+side was wrong.
+
+---
+
+## 10. OPEN, the reconciler amplifies during an outage
 
 **Status: unfixed. Reproducible. Left failing on purpose.**
 
@@ -307,7 +337,7 @@ worth more than a clean report would have been.
 
 ## What this list is
 
-Eight fixed, one open, and none of them found by reading the code.
+Nine fixed, one open, and none of them found by reading the code.
 
 The techniques that found them, in order of how much they were worth:
 
@@ -318,6 +348,7 @@ The techniques that found them, in order of how much they were worth:
 | Booting the whole system and looking at it | #4 and #5, gaps *between* components that no unit test can see |
 | Writing adversarial tests for a frozen contract | #2 and #3, hostile values the definition never considered |
 | Running the same command twice | #8 |
+| Recording expected answers instead of asserting them | #9 |
 
 The pattern across all of them is that the defect lived in the space between two
 individually correct things: a relay that gives up and a reconciler that revives,

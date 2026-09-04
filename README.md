@@ -8,7 +8,8 @@
 
 The deterministic control plane that sits between a language model and a merchant's money.
 The model may describe what it thinks went wrong. It may never decide what happens next,
-never name an amount, and never move a rupee.
+never name an amount, and never move a rupee. Every action it takes, and every action it
+refuses, comes out as a proof you can check without trusting the system that produced it.
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -22,8 +23,9 @@ never name an amount, and never move a rupee.
 
 | | | |
 |---|---|---|
-| **No install** | **[huggingface.co/spaces/hriday29/resilientmesh](https://huggingface.co/spaces/hriday29/resilientmesh)** | One real run, published. Re-derives all 538 audit digests in **your browser**, then lets you plant a forgery and watch it name the row you touched. About 80 ms. |
-| **The real thing** | `go run ./cmd/meshdemo` | The whole system on your machine. Two minutes. No Docker, no account, no key. |
+| **Attack it** | **[huggingface.co/spaces/hriday29/resilientmesh](https://huggingface.co/spaces/hriday29/resilientmesh)** | The real gatekeeper, compiled to WebAssembly. Send it proposals no model would produce and watch fourteen invariants refuse them, **in your browser**, with no server involved. |
+| **Verify it** | same page | Re-derives all 594 audit digests, then proves one payment on its own with 8 sibling hashes instead of the whole ledger. Both run on your machine. |
+| **Run it** | `go run ./cmd/meshdemo` | The whole system, two minutes. No Docker, no account, no key. |
 
 [Evaluation guide](docs/EVALUATING.md)
 ·
@@ -92,8 +94,8 @@ minutes and writes a transcript to `artifacts/DEMO_REPORT.md`.
 </details>
 
 <div align="center">
-<img src="docs/img/space-run.png" alt="The narrated run, replayed" width="880">
-<br><em>The same transcript, replayable act by act on the <a href="https://huggingface.co/spaces/hriday29/resilientmesh">evidence page</a>.</em>
+<img src="docs/img/space-pipeline.png" alt="Payments flowing through the recovery pipeline and branching at the gatekeeper" width="900">
+<br><em>The <a href="https://huggingface.co/spaces/hriday29/resilientmesh">evidence page</a> replays this run's own incidents through the real architecture. Each one branches at the gate the way it actually branched.</em>
 </div>
 
 ---
@@ -110,10 +112,6 @@ thing it exists to do.
 | **The audit ledger** and its SHA-256 hash chain. | **The clock.** Waits before a scheduled retry are compressed so the loop closes while you watch. Regulatory delays are never compressed, and the factor is recorded in the ledger. |
 | **The LIVE inference calls**, over the network, at temperature 0. | |
 | **Every count, amount and timestamp**, read from the running system's own database. | |
-
-<div align="center">
-<img src="docs/img/space-honesty.png" alt="What is real and what is simulated" width="880">
-</div>
 
 ---
 
@@ -294,6 +292,70 @@ bugs: see [the post-mortem](docs/POSTMORTEM.md).
 
 ---
 
+## Proof-carrying recovery
+
+The blocker on letting an agent act on a regulated merchant's money is not capability. It is
+**liability**: when the agent retries a customer's mandate, somebody has to be able to show
+afterwards that it was allowed to. Today that means mining logs written by the same system
+that took the action.
+
+Three things here answer that, and all three are checkable by someone who does not trust this
+codebase.
+
+### 1. Attack the gatekeeper yourself
+
+`cmd/meshwasm` compiles the production gatekeeper to WebAssembly. It imports
+`internal/gatekeeper` through `internal/gatewire` and adds nothing but JSON decoding, so there
+is no second implementation to drift. Its clock comes from the request rather than the host,
+so the same input gives the same decision on every machine.
+
+The published page loads it on demand and hands it to you. Smuggle an amount into the JSON,
+spell an action with U+017F so Unicode case folding would once have made it valid, claim a
+confidence of 1e9, debit a mandate two hours into RBI's twenty-four hour cooling window.
+
+<div align="center">
+<img src="docs/img/space-attack.png" alt="A model proposal asking for a larger amount, and the gatekeeper pinning it" width="900">
+<br><em>The model asked for ₹49,999.00. The command came out ₹4,999.00, pinned from the signed payload, with the rule that did it named.</em>
+</div>
+
+**And the module is proved to match the server build.** The exporter records eleven inputs
+with the answers this binary gave them; the page re-derives all eleven in your browser and
+compares every field, including which invariants fired and in what order. Two builds of one
+package agreeing, shown rather than claimed.
+
+### 2. One payment, provable on its own
+
+A hash chain makes the ledger tamper-evident, but checking a single entry against it means
+walking every entry before it. So proving one payment meant handing over the whole ledger,
+which a merchant cannot do: it contains every other customer's traffic.
+
+`internal/attest` adds a Merkle tree over the same entry digests the chain links. An inclusion
+proof is about log2(n) sibling hashes, and the siblings are digests, so a bundle proves its
+payment and discloses nothing about any other.
+
+<div align="center">
+<img src="docs/img/space-evidence.png" alt="Nine ledger entries proved against a Merkle root with eight sibling hashes each" width="900">
+<br><em>Nine entries proved in 2 ms with 8 sibling hashes each, without reading the other 585 entries.</em>
+</div>
+
+```bash
+go run ./cmd/meshctl evidence pay_XSeuU4A6Kdc90b --out dispute.json
+```
+
+That is the shape a merchant hands a bank during a **chargeback dispute**, and the shape a
+compliance team hands an auditor asking whether a mandate debit was permitted. It is plain
+JSON with the verification recipe written into it, because evidence that can only be checked
+by the tool that produced it is not evidence. Two implementation details matter and are
+tested: leaves and interior nodes carry different tags, following RFC 6962, so no leaf can
+impersonate an interior node; and odd levels promote rather than duplicate, which is the shape
+CVE-2012-2459 exploited.
+
+If the chain is already broken, `meshctl evidence` refuses to emit anything rather than
+producing a bundle with a caveat. A valid-looking proof of membership in a compromised set is
+worse than no proof.
+
+### 3. The ledger itself
+
 ## The audit ledger
 
 Every consequential decision is hash-chained. Fields are absorbed **length-prefixed**, an
@@ -321,9 +383,8 @@ nothing, because the head is what an attacker rewrites last.
 a real run as the exact bytes the ledger hashed, re-derives every digest with `crypto.subtle`
 in your browser, and gives you a button that plants a forgery.
 
-<div align="center">
-<img src="docs/img/space-verify.png" alt="The audit chain re-verified in the browser" width="880">
-</div>
+Both proofs run on the [evidence page](https://huggingface.co/spaces/hriday29/resilientmesh),
+in your browser, with buttons that plant forgeries so you can watch them fail.
 
 ---
 
@@ -354,9 +415,11 @@ move, and a session that only exists in a test is not evidence that the path wor
 | It runs as a pass/fail gate | `go run ./cmd/meshctl selftest` | requires a *completed* recovery, then plants a tamper and requires detection at the exact row |
 | The invariants hold everywhere | `go run ./cmd/modelcheck` | 510,720 states, 8,390,192 transitions, 0 violations |
 | It survives faults | `go run ./cmd/meshsim --seed 42 --chaos standard` | deterministic, byte-identical traces, 9 invariants checked |
-| The suite is green | `go test ./... -count=1` | domain 98.3%, simulation 87.7% statement coverage |
+| The suite is green | `go test ./... -count=1` | domain 98.3%, simulation 87.7%, attest 96.4% |
 | It is race-free | `go test ./... -race` | clean |
-| Nothing private is tracked | `go run ./cmd/leakscan` | 1,242 tracked files, PASS |
+| The browser gatekeeper matches the server | open the page, press "Re-derive every decision" | 11 of 11 identical, ~70 ms |
+| One payment is provable alone | press "Verify this payment on its own" | 9 entries, 8 hashes each, 15 kB |
+| Nothing private is tracked | `go run ./cmd/leakscan` | 1,249 tracked files, PASS |
 | Every gate at once | `./scripts/judge.sh` | writes a report to `artifacts/` |
 
 ### Dependencies
@@ -381,7 +444,7 @@ from the production path proves nothing about the production path.**
 
 ## What broke, and what I did about it
 
-Nine real defects, none of them found by reading the code. Full write-ups in
+Ten real defects, none of them found by reading the code. Full write-ups in
 [docs/POSTMORTEM.md](docs/POSTMORTEM.md). The last one is **still open and left failing on
 purpose**.
 
@@ -395,7 +458,8 @@ purpose**.
 | 6 | Deterministic simulation | A retried write double-counted money. The `attempts` table had an index on `(incident, attempt)` but no uniqueness, so a fault after `RecordAttempt` inserted a second row and inflated every measurement, in the direction that flatters the system. |
 | 7 | Deterministic simulation | A transient broker outage permanently destroyed events. The relay parked a row on its *first* publish failure, and the claim itself charged an attempt. The relay's own comment stated the correct principle and the code did the opposite. |
 | 8 | Running the demo twice | The demonstration poisoned its own next run: act 5 forges a ledger row and does not repair it, and the next run inherited that forgery through a reused data directory. Fixed by giving the demo its own database and emptying it every run. Adding a repair path for one's own audit trail would have been the wrong fix. |
-| 9 | **OPEN** | The reconciler amplifies during an outage: a parked outbox row is not `PENDING`, so the reconciler treats its incident as stalled and inserts a replacement, which parks too. 20,434 rows from 400 incidents. **Two fixes were attempted and both reverted.** One traded a loud failure for a silent one; the other stopped the run draining for reasons I did not fully characterise. A verification harness edited until it agrees with the system is not a harness, and a fix I cannot explain is not a fix. |
+| 9 | Recorded vectors | A conformance vector used `card_stolen`, which is not in the taxonomy, so it fell through to a generic retry and looked like the gate permitting a stolen card. The code is `card_lost_or_stolen`. The fixture was wrong, not the gate, and it was legible only because the expected answer is recorded from a real run rather than asserted by hand. |
+| 10 | **OPEN** | The reconciler amplifies during an outage: a parked outbox row is not `PENDING`, so the reconciler treats its incident as stalled and inserts a replacement, which parks too. 20,434 rows from 400 incidents. **Two fixes were attempted and both reverted.** One traded a loud failure for a silent one; the other stopped the run draining for reasons I did not fully characterise. A verification harness edited until it agrees with the system is not a harness, and a fix I cannot explain is not a fix. |
 
 Reproduce the open one:
 
@@ -439,6 +503,7 @@ cmd/
   meshctl      operator CLI: selftest, audit verify, dlq replay, mandate halt
   modelcheck   exhaustive state-space walk over the gatekeeper
   meshsim      deterministic simulation with fault injection
+  meshwasm     the gatekeeper, compiled to WebAssembly for the page
   leakscan     the secret and private-document scanner CI runs
   api, worker, simulator
 internal/
@@ -451,6 +516,8 @@ internal/
   worker       the decision loop, sweeper and executor wiring
   store        PostgreSQL, migrations, hash-chain allocation
   audit        the ledger
+  attest       Merkle tree, inclusion proofs, portable evidence
+  gatewire     the JSON boundary both the browser and the server call
   infra        embedded PostgreSQL and RESP, for managed mode
   simulation   the deterministic simulator and its invariants
 space/         the published evidence page
@@ -492,7 +559,9 @@ Verify a real run's audit ledger in your own browser. Nothing to install, nothin
 
 **`go run ./cmd/meshdemo`**
 
-Two minutes. No account, no key, no Docker. Then plant a forgery in the ledger
-and watch it name the row you touched.
+Two minutes. No account, no key, no Docker.
+
+Or open the [evidence page](https://huggingface.co/spaces/hriday29/resilientmesh) and try to
+talk the gatekeeper into moving money. It is the real one.
 
 </div>

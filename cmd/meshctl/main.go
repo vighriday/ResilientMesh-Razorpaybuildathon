@@ -50,6 +50,10 @@ const usage = `meshctl — ResilientMesh operator CLI
   meshctl status                          one-screen operational summary
   meshctl audit verify                    recompute the whole hash chain
   meshctl audit head                      the current chain head
+  meshctl evidence <payment_id> [--out f] a portable, offline-checkable proof
+                                          of one payment's history, small
+                                          enough to hand a bank and disclosing
+                                          no other payment
   meshctl incident show <incident_id>     the full story of one incident
   meshctl incident list [--limit N]       recent incidents
   meshctl downtime                        the issuer downtime view
@@ -235,6 +239,20 @@ func dispatch(ctx context.Context, c *conn, g globals, args []string, out io.Wri
 		default:
 			return badUsage("unknown incident subcommand %q", args[1])
 		}
+
+	case "evidence":
+		if len(args) < 2 {
+			return badUsage("evidence needs a payment id")
+		}
+		// An optional --out path, parsed here rather than as a global because
+		// it means nothing to any other subcommand.
+		outPath := ""
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--out" && i+1 < len(args) {
+				outPath = args[i+1]
+			}
+		}
+		return cmdEvidence(ctx, c, g, args[1], outPath, out)
 
 	case "downtime":
 		return cmdDowntime(ctx, c, g, out)

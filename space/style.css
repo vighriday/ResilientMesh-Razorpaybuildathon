@@ -753,3 +753,12 @@ footer { padding: var(--s-8) 0 var(--s-9); border-top: 1px solid var(--line-2); 
   .stage canvas { height: 240px; }
   .stage-foot { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* The attack comparison: what was asked, and what the gate emitted, in one
+   cell so three monospace columns can never shear the card. */
+.cmp { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.cmp .was { color: var(--ink-3); }
+.cmp .was.struck { text-decoration: line-through; text-decoration-thickness: 1px; }
+.cmp .arrow { color: var(--ink-3); font-size: var(--t-13); }
+#atk-out td:first-child { width: 1%; white-space: nowrap; }
+#atk-out td { white-space: normal; }

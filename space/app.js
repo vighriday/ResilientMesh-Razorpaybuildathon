@@ -899,8 +899,19 @@ async function loadWasm() {
   try {
     if (typeof Go !== 'function') throw new Error('the Go WebAssembly loader is not present');
     const go = new Go();
-    const res = await WebAssembly.instantiateStreaming(fetch('gatekeeper.wasm'), go.importObject);
-    go.run(res.instance);
+    /* Streaming instantiation is the fast path and it is also the fragile one:
+       it refuses anything not served as application/wasm, and the module is
+       delivered here through a redirect to a CDN. Falling back to a buffered
+       instantiate costs one extra copy and removes a whole class of "it works
+       on my host" failure. */
+    let mod;
+    try {
+      mod = await WebAssembly.instantiateStreaming(fetch('gatekeeper.wasm'), go.importObject);
+    } catch (_) {
+      const bytes = await (await fetch('gatekeeper.wasm')).arrayBuffer();
+      mod = await WebAssembly.instantiate(bytes, go.importObject);
+    }
+    go.run(mod.instance);
     /* go.run resolves only when the module exits, and ours parks forever, so the
        export is read on the next microtask rather than awaited. */
     await new Promise((r) => setTimeout(r, 0));
@@ -970,18 +981,21 @@ function runAttack() {
     ['Tier claimed', asked.mode || 'none', out.mode || 'stamped in-process'],
     ['Delay asked for', asked.delay_seconds != null ? asked.delay_seconds + 's' : 'none', out.delay_seconds + 's'],
   ];
+  /* Asked and got share one cell. Three columns of monospace overflowed the
+     card on a laptop, and a table that shears is worse than a denser one. */
   for (const [k, a, b] of rows) {
     const differs = b && String(a) !== String(b);
-    body.appendChild(row([
-      { cls: 'dim', text: k },
-      { cls: 'mono', text: a },
-      { node: differs ? pill(b, 'ok') : el('span', 'mono', b || '') },
-    ]));
+    const cell = el('div', 'cmp');
+    cell.appendChild(el('span', 'mono was' + (differs ? ' struck' : ''), a));
+    if (b) {
+      cell.appendChild(el('span', 'arrow', '→'));
+      cell.appendChild(differs ? pill(b, 'ok') : el('span', 'mono', b));
+    }
+    body.appendChild(row([{ cls: 'dim', text: k }, { node: cell }]));
   }
   body.appendChild(row([
     { cls: 'dim', text: 'Invariants applied' },
     { cls: 'free', text: (out.applied_invariants || []).join('   ') || 'none' },
-    '',
   ]));
 
   $('atk-why').textContent = out.reason
