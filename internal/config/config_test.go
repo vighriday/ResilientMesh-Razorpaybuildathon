@@ -154,7 +154,7 @@ func TestProviderDerivedEndpointAndModelDefaults(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct{ url, model string }{
-		ProviderGroq:   {"https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"},
+		ProviderGroq:   {"https://api.groq.com/openai/v1", "openai/gpt-oss-120b"},
 		ProviderOpenAI: {"https://api.openai.com/v1", "gpt-4o-mini"},
 		ProviderGemini: {"https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"},
 		ProviderOllama: {"http://127.0.0.1:11434/v1", "llama3.1"},

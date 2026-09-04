@@ -1,137 +1,127 @@
+<div align="center">
+
+<img src="docs/img/space-hero.png" alt="ResilientMesh" width="820">
+
 # ResilientMesh
 
-**A deterministic control plane for agents that spend merchant money.**
+**A failed payment is a decision, not a retry.**
 
-Razorpay Buildathon — **Track 03, AI Revenue Recovery**
+The deterministic control plane that sits between a language model and a merchant's money.
+The model may describe what it thinks went wrong. It may never decide what happens next,
+never name an amount, and never move a rupee.
 
-| | |
-|---|---|
-| **Built by** | Hriday Vig |
-| **College** | Maharaja Surajmal Institute of Technology |
-| **Graduating** | 2028 |
-| **Track** | Track 03 — AI Revenue Recovery |
-| **Repository** | <https://github.com/vighriday/ResilientMesh-Razorpaybuildathon> |
-| **Pitch video** | *(5 min, unlisted — link added at submission)* |
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Model checked](https://img.shields.io/badge/model%20checked-510%2C720%20states%20·%200%20violations-0f7a52)](#proof-not-assertion)
+[![Invariants](https://img.shields.io/badge/invariants-14%20deterministic-2b5cff)](#the-fourteen-invariants)
+[![Direct dependencies](https://img.shields.io/badge/direct%20dependencies-6-7a8399)](#dependencies)
+
+**[Evidence page: verify the ledger in your own browser](https://huggingface.co/spaces/hriday29/resilientmesh)**
+·
+[Evaluation guide](docs/EVALUATING.md)
+·
+[Post-mortem](docs/POSTMORTEM.md)
+
+</div>
 
 ---
 
-## The one-line version
+## Run it in one command
 
-Razorpay's Agent Studio already ships agents that act on merchant money — Subscription Recovery, Auto-Capture, RTO Shielder, Dispute Auto Responder. **ResilientMesh is not a sixth agent. It is the layer that makes shipping the first five defensible**: a deterministic gatekeeper the model cannot talk its way past, a tamper-evident ledger of every decision, and a proof — not a claim — that the rules hold.
-
-It is demonstrated on the hardest case in the track: recovering failed payments and recurring mandates under RBI's e-mandate rules, where a wrong retry is not a suboptimal choice but a regulatory breach.
-
----
-
-## Run it
-
-One command. No Docker, no database install, no API key, no account, no spend, no network.
+Go 1.25 or newer is the only prerequisite. No Docker, no cloud account, no payment
+credentials, no API key.
 
 ```bash
+git clone https://github.com/vighriday/ResilientMesh-Razorpaybuildathon
+cd ResilientMesh-Razorpaybuildathon
 go run ./cmd/meshdemo
 ```
 
-**That is the whole evaluation.** In about 60 seconds it boots the entire
-system on embedded infrastructure, drives a scripted bank outage and a batch of
-recurring-mandate failures through it, and narrates what happens — every number
-read back out of the running system's own database, not printed from a script.
-It ends by attacking its own audit ledger and proving the tamper is caught at
-the exact row, then writes a transcript to `artifacts/DEMO_REPORT.md`.
-
-Add `-full` for the exhaustive model check and the four-policy benchmark, or
-`-keep` to leave it running so you can open the console.
+That starts embedded PostgreSQL 18.3 and a Redis-protocol server **inside the process**,
+boots the real API and worker, drives a scripted bank outage through them, and narrates what
+is happening while every number is read back out of the database. It finishes in about two
+minutes and writes a transcript to `artifacts/DEMO_REPORT.md`.
 
 <details>
-<summary>What a run looks like</summary>
+<summary><b>What that run actually prints</b> (real output, trimmed)</summary>
 
 ```
+  0. Booting the real system
+  · Starting embedded PostgreSQL 18.3 and an in-process Redis server
+  · Initialising an empty database, so this run depends on nothing before it
+  ✓ Up in 28.8s. API on 127.0.0.1:8080, Razorpay API on 127.0.0.1:8081
+
+  1. A bank goes down and failed payments start arriving
+     PAYMENT             ISSUER           DECLINE                  AMOUNT        STATE
+     pay_XD0nBPG9aT3YHf  netbanking:SBIN  authentication_failed    ₹6,829.00     ABSTAINED
+     pay_nLuP6TRLhYUFTx  netbanking:HDFC  bank_technical_error     ₹3,494.00     RECOVERED
+     pay_bDEHVc295COswR  card:ICIC        gateway_technical_error  ₹1,52,574.00  EXECUTING
+
+  2. What the model proposes, and what the gatekeeper allows
+       WEBHOOK_ACCEPTED     invalid_otp, ₹939.00, signature verified
+       DIAGNOSIS_PROPOSED   LIVE proposed ASYNC_EXPONENTIAL_RETRY at 0.78
+       GATE_DECISION        MANDATE_COMPLIANT_CASCADE on card after 86400s
+                            [AMOUNT_PINNED RBI_MANDATE_COOLING RBI_PRE_DEBIT_NOTICE DELAY_BOUNDS]
+  Decided by LIVE 13   HEURISTIC 118
+
   3. The decisions it refuses to make
-
-  ✓ 6 distinct invariants have refused something
-
-     INVARIANT             TIMES FIRED  WHAT IT PREVENTS
-     TERMINAL_DECLINE      3            a decline no retry can fix, so no fee is spent
-     AMOUNT_PINNED         1            the amount can only come from the signed payload
-     RBI_AFA_CEILING       1            above the ceiling a debit needs authentication
-     RBI_MANDATE_COOLING   1            RBI's 24-hour gap between recurring debits
-     RBI_PRE_DEBIT_NOTICE  1            the payer must be warned before a debit
-
-  4. Payments recovering
-
-  ✓ 13 recovered, 2 scheduled, 1 abstained
-  Recovered  ₹2,73,405.00 of merchant revenue
-  Cost       ₹35.00 in gateway fees to do it
+     INVARIANT               TIMES FIRED  WHAT IT PREVENTS
+     TERMINAL_DECLINE        12           a decline no retry can fix, so no fee is spent
+     AMOUNT_PINNED           10           the amount can only come from the signed payload
+     DELAY_BOUNDS            10           the schedule stays inside a sane horizon
+     RBI_AFA_CEILING          3           above the ceiling a debit needs authentication
+     RBI_MANDATE_COOLING      3           RBI's 24-hour gap between recurring debits
+     RBI_PRE_DEBIT_NOTICE     3           the payer must be warned before a debit
+     LOW_CONFIDENCE_ABSTAIN   1           the model was not sure enough to spend money
 
   5. The audit ledger, and an attack on it
-
-  ✓ Chain intact: 163 entries verified, head 625b346de6fa0dbc…
-  · Editing entry 81 directly in PostgreSQL, as an attacker would
-  ✓ Detected at entry 81 — the exact row that was edited
+  ✓ Chain intact: 538 entries verified, head e61cea979b8ca13d...
+  · Editing entry 269 directly in PostgreSQL, as an attacker with database access would
+  ✓ Detected at entry 269, the exact row that was edited
 ```
 
 </details>
 
-If you would rather drive it yourself:
+---
 
-```bash
-go run ./cmd/mesh
-```
+## What is real, and what is simulated
 
-That boots a real PostgreSQL 18.3, a real Redis-protocol server, the HTTP edge, the worker pool and a Razorpay API simulator — all in one process — then drives a scripted bank outage through it. It prints the URLs and the operator token:
+Stated first, because a recovery system that overstates its own numbers has failed at the
+thing it exists to do.
 
-```
-────────────────────────────────────────────────────────────────────
-  ResilientMesh is running. Everything below is local.
-────────────────────────────────────────────────────────────────────
-  Checkout        http://127.0.0.1:8080/checkout.html
-  Ops console     http://127.0.0.1:8080/console.html
-  Razorpay API    http://127.0.0.1:8081
-  Health          http://127.0.0.1:8080/readyz
-────────────────────────────────────────────────────────────────────
-  Ops token       d3cf8cf1e0611959e921eced46be19dd…
-                  (generated for this run; paste it into the console)
-────────────────────────────────────────────────────────────────────
-  Scenario        issuer-outage, seed 42, 122 scripted failures
-  Inference       HEURISTIC then REPLAY (no model configured)
-────────────────────────────────────────────────────────────────────
-```
-
-| URL | What you see |
+| Real | Simulated |
 |---|---|
-| `/checkout.html` | A live checkout. It moves from Netbanking to UPI mid-session, over SSE, when the bank degrades — before the customer gives up. |
-| `/console.html` | Incidents, issuer health, breaker states, inference-tier mix, and the audit chain with a **Verify** button. |
+| **The system.** Embedded PostgreSQL, Redis Streams, the outbox relay, the worker, the gatekeeper and the executor are the production code paths, not a demo build. | **The payments.** Traffic comes from a Razorpay simulator that serves Razorpay's schemas, signs real HMAC webhooks and emits real decline codes against real Indian issuer codes. No customer, and no rupee, is real. |
+| **Every decision**, and the rule that permitted or refused it. | **Therefore every money figure is simulated money.** It is summed honestly from the `attempts` table, and it measures the policy rather than a merchant's actual revenue. |
+| **The audit ledger** and its SHA-256 hash chain. | **The clock.** Waits before a scheduled retry are compressed so the loop closes while you watch. Regulatory delays are never compressed, and the factor is recorded in the ledger. |
+| **The LIVE inference calls**, over the network, at temperature 0. | |
+| **Every count, amount and timestamp**, read from the running system's own database. | |
 
-First run downloads a PostgreSQL binary once (~60 MB) and caches it under your user cache directory. Cold start measured at **11.8 s**; warm start is a couple of seconds.
-
-**Nothing binds beyond loopback.** No firewall prompt, no exposure.
-
-### Verify it the way a reviewer would
-
-```bash
-go run ./cmd/meshctl selftest   # boots everything, recovers real payments,
-                                # then tampers with the audit ledger and
-                                # proves the tamper is detected
-./scripts/judge.sh              # every gate; or: powershell -File scripts/judge.ps1
-go run ./cmd/modelcheck         # exhaustive proof over the decision state space
-go run ./cmd/leakscan           # secret / private-material scanner
-```
-
-**Step-by-step for a reviewer with no context:
-[`docs/EVALUATING.md`](docs/EVALUATING.md).**
+<div align="center">
+<img src="docs/img/space-honesty.png" alt="What is real and what is simulated" width="880">
+</div>
 
 ---
 
-## Why this, and not another retry bot
+## Why this, and not a sixth recovery agent
 
-Every incumbent — Stripe Smart Retries, Adyen RevenueAccelerate, Juspay, Razorpay Optimizer — decides **before** the customer sees a failure: route the payment well, then statistically guess when to retry what failed.
+Razorpay's Agent Studio already ships Subscription Recovery, Revenue Drop Detector,
+Auto-Capture, RTO Shielder and Dispute Auto Responder. Building a seventh variation of those
+would be building the part that is already solved.
 
-ResilientMesh owns the part nobody owns: **the failure domain**, the seconds and hours *after* a decline.
+The unsolved part is the one that stops any of them from being shipped to a regulated Indian
+merchant:
 
-Two things fall out of that, and both are only possible on Razorpay:
+> "Your agent retried my customer's mandate. Prove it was allowed to, prove it did not change
+> the amount, and show me the record. The one that would still be trustworthy if someone had
+> database access."
 
-1. **Razorpay publishes issuer downtime.** `/v1/downtimes` moves an entity to `resolved` when the issuer recovers. Every competitor *estimates* that moment because their processors do not tell them. Waiting out a statistical guess about an event that is being broadcast is strictly worse than subscribing to the broadcast. Here, computed backoff is an **upper bound**; the resolution notice is the **mechanism**.
+A log line and a model's rationale do not answer that. Both are written by the same system
+that took the action, and an LLM's explanation is a post-hoc narration, not a cause.
 
-2. **`card_expired` is not terminal.** RBI card-on-file tokenization means recurring card payments in this market already run on network tokens. The card number changing does not mean the funding account went away. Classifying that decline terminal — as the industry does — silently discards recoverable revenue. ResilientMesh re-presents through the token instead.
+**ResilientMesh is the layer that makes shipping the first five defensible**, demonstrated on
+the hardest case: RBI-regulated recurring mandate recovery, where a wrong retry is not a bad
+outcome but a regulatory breach.
 
 ---
 
@@ -139,218 +129,350 @@ Two things fall out of that, and both are only possible on Razorpay:
 
 ```mermaid
 flowchart TB
-    subgraph edge["Trust boundary"]
-        WH["POST /webhooks/razorpay<br/>HMAC · body cap · skew · replay"]
+    subgraph edge["Outside world"]
+        WH["Razorpay webhook<br/><i>payment.failed</i>"]
     end
 
-    subgraph durable["One PostgreSQL transaction"]
-        INC[("incident")]
-        OUT[("outbox")]
-        AUD[("audit entry")]
+    subgraph ingest["Ingest edge"]
+        HMAC["HMAC verify<br/><i>before anything parses</i>"]
+        TX["One PostgreSQL transaction:<br/>incident + outbox row + audit entry"]
     end
 
-    RELAY["Outbox relay<br/>SKIP LOCKED · jittered backoff"]
-    Q["Redis Streams<br/>consumer group · DLQ"]
+    subgraph transport["Asynchronous transport"]
+        RELAY["Outbox relay<br/><i>probes the queue, backs off</i>"]
+        STREAM["Redis Streams<br/><i>consumer group and DLQ</i>"]
+        SWEEP["Due sweeper<br/><i>FOR UPDATE SKIP LOCKED</i>"]
+    end
 
-    subgraph pipe["Worker pipeline"]
-        DIAG["Diagnoser<br/>LIVE → REPLAY → HEURISTIC"]
+    subgraph decide["Decision"]
+        CTX["DiagnosticContext<br/><i>allowlisted, bucketed, no PII</i>"]
+        TIERS["LIVE, then REPLAY, then HEURISTIC"]
+        PROP["DiagnosticProposal<br/><i>advisory, no amount field</i>"]
         GATE{{"Gatekeeper<br/>14 deterministic invariants"}}
-        EXEC["Executor<br/>Razorpay API"]
+        CMD["SanitizedCommand<br/><i>authoritative</i>"]
     end
 
-    SIG["Ambient signal<br/>telemetry · breaker · downtime"]
-    SSE["SSE hub → live checkout"]
+    subgraph act["Effect"]
+        EXEC["Executor<br/><i>the only thing that spends money</i>"]
+        LEDGER[("Hash-chained ledger<br/><i>actions and refusals alike</i>")]
+    end
 
-    WH --> durable
-    INC --- OUT --- AUD
-    OUT --> RELAY --> Q --> DIAG
-    SIG -.evidence.-> DIAG
-    DIAG -- "advisory proposal" --> GATE
-    SIG -.constraints.-> GATE
-    GATE -- "SanitizedCommand" --> EXEC
-    GATE -- "veto + reasons" --> AUD
-    EXEC --> SSE
-    EXEC --> AUD
+    WH --> HMAC --> TX
+    TX --> RELAY --> STREAM --> CTX
+    TX -. deferred .-> SWEEP -. due .-> STREAM
+    CTX --> TIERS --> PROP --> GATE
+    GATE -->|permitted| CMD --> EXEC
+    GATE -->|refused, with the rule named| LEDGER
+    EXEC --> LEDGER
+    EXEC -. retry with budget .-> SWEEP
 
-    style GATE fill:#1b2a6b,color:#fffdf8,stroke:#1b2a6b
-    style DIAG fill:#fff4d6,stroke:#b8860b
-    style AUD fill:#e8f5e9,stroke:#2e7d32
+    style GATE fill:#e3f5ed,stroke:#0f7a52,stroke-width:2px
+    style PROP stroke-dasharray: 5 5
+    style LEDGER fill:#eaefff,stroke:#2b5cff,stroke-width:2px
 ```
 
-**The incident, its outbox row and its audit entry are written in one transaction.** That is what removes the dual-write window in which a payment has been recovered and nobody has been told — the window where money goes missing.
+### The trust boundary
 
-### The trust boundary in one picture
+It is structural, not procedural. It is enforced by **which fields exist on which type**, so
+it cannot be forgotten at a call site.
 
 ```mermaid
 flowchart LR
-    CTX["DiagnosticContext<br/><i>allowlisted · bucketed · no PII</i>"]
-    PROP["DiagnosticProposal<br/><i>advisory · has no amount field</i>"]
-    GATE{{"Gatekeeper"}}
-    CMD["SanitizedCommand<br/><i>authoritative</i>"]
+    A["<b>DiagnosticContext</b><br/>sent to the model<br/><br/>success rate as '0 to 20 percent'<br/>never a number<br/>no PII, no customer id<br/>no exact amount"]
+    B["<b>DiagnosticProposal</b><br/>returned by the model<br/><br/>failure_class<br/>recommended_action<br/>confidence_score<br/><b>no amount field at all</b>"]
+    C{{"<b>Gatekeeper</b><br/>14 pure functions of state<br/><br/>may downgrade or refuse<br/><b>may never upgrade</b>"}}
+    D["<b>SanitizedCommand</b><br/>authoritative<br/><br/>amount copied from<br/>the signed payload"]
 
-    CTX --> LLM["Model"] --> PROP --> GATE --> CMD --> GW["Gateway"]
+    A -->|bucketed| B -->|advisory only| C -->|"or an abstention,<br/>with the rule named"| D
 
-    style PROP fill:#fff4d6,stroke:#b8860b
-    style CMD fill:#e8f5e9,stroke:#2e7d32
-    style GATE fill:#1b2a6b,color:#fffdf8
+    style B stroke-dasharray: 5 5
+    style C fill:#e3f5ed,stroke:#0f7a52,stroke-width:2px
 ```
 
-The proposal type **has no amount field**. Not a validated one — no field at all. A model cannot propose a different amount because the wire format gives it nowhere to write one. The amount on the executed command is copied from the HMAC-verified webhook payload and nothing else, and that is an invariant proved exhaustively, not a code review comment.
+Three consequences worth stating plainly:
 
-Provenance (`mode`, `model`, `latency`, `degraded`) carries `json:"-"`. A model returning `{"mode":"LIVE"}` cannot promote its own answer to a higher tier in the audit trail.
+- A model returning `{"mode":"LIVE"}` **cannot forge its own tier**, because provenance fields
+  carry `json:"-"` and are set in-process after the call returns.
+- A model **cannot change a sum**, because the proposal type has no amount field to carry one.
+  Not a validated field. No field.
+- A prompt-injected action string **cannot become a valid action**, because the parsers fold
+  ASCII only. That last one was a real bug: see [what broke](#what-broke-and-what-i-did-about-it).
 
----
-
-## AI judgment: where the model is, and where it deliberately is not
-
-This is the criterion the project is organised around.
+### Where the model is, and where it deliberately is not
 
 ```mermaid
-flowchart TB
-    IN["Failed payment"] --> Q1{"Does the error code<br/>state its own cause?"}
-    Q1 -- "yes — terminal, soft,<br/>refreshable" --> DET["Deterministic rules<br/><b>no model</b>"]
-    Q1 -- "no — genuinely<br/>ambiguous" --> Q2{"Is evidence<br/>available?"}
-    Q2 -- yes --> LLM["Model weighs<br/>telemetry · downtime · history"]
-    Q2 -- no --> ABS["Abstain"]
-    DET --> GATE{{"Gatekeeper<br/>always"}}
-    LLM --> GATE
-    ABS --> GATE
-    style LLM fill:#fff4d6,stroke:#b8860b
-    style DET fill:#e8f5e9,stroke:#2e7d32
-    style GATE fill:#1b2a6b,color:#fffdf8
+flowchart TD
+    START["A payment fails"] --> Q1{"Does the taxonomy<br/>already state the cause?"}
+    Q1 -->|"card_expired,<br/>terminal declines"| H["<b>HEURISTIC</b><br/>deterministic classifier<br/><i>no model, no cost, no latency</i>"]
+    Q1 -->|"ambiguous code,<br/>issuer degrading,<br/>downtime notice"| Q2{"Is a model reachable?"}
+    Q2 -->|yes| L["<b>LIVE</b><br/>temperature 0, JSON only, hard timeout"]
+    Q2 -->|no| R["<b>REPLAY</b><br/>1,080 digest-keyed cassettes<br/><i>same evidence, same answer</i>"]
+    R -->|"no cassette matches"| H
+    H --> G{{"Gatekeeper"}}
+    L --> G
+    R --> G
+    G --> OUT["The decision, and the rule that allowed it"]
+
+    style G fill:#e3f5ed,stroke:#0f7a52,stroke-width:2px
+    style H fill:#f0f2f7
 ```
 
-**Where a model is not used, and why:**
+A model is **never** used for:
 
-- **Terminal declines** (`card_lost_or_stolen`, `bank_account_invalid`, …). The code states the cause. Asking a model is spending latency and money to be told what the taxonomy already says.
-- **Soft declines** (`insufficient_funds`, `upi_collect_expired`, `invalid_otp`). Recoverable *and* unambiguous. The only open question is *when* to come back, and that is a function of who has to act: an OTP failure needs the payer to read a message (minutes); an empty balance needs money to arrive (six hours, crossing a salary credit). A model adds variance to a decision a lookup table gets right.
-- **Every regulatory rule.** RBI's 24-hour cooling window, the pre-debit notice, the per-cycle attempt cap, the ₹15,000 / ₹1,00,000 additional-factor ceilings. These are deterministic invariants. A probabilistic component near them would be the defect.
-- **Every money value.** Integers in paisa, copied from the verified payload. Floats are absent from money paths by construction.
-
-**Where the model earns its place:** the ambiguous set — `bank_technical_error`, `gateway_technical_error`, `payment_timed_out`, `issuer_down`, `upi_psp_error`. Codes where the root cause is genuinely underdetermined and the answer depends on weighing rolling telemetry against portfolio baselines, downtime notices, breaker state and recent history. That is a judgement, and it is the only place one is made.
-
-**Three inference tiers, so the system never depends on a model being reachable:**
-
-| Tier | When | Provenance |
-|---|---|---|
-| `LIVE` | An API key is configured | Model + latency recorded per incident |
-| `REPLAY` | 1,080 cassettes keyed by a digest of the *bucketed* context | Byte-identical decisions offline |
-| `HEURISTIC` | Always available, last resort | Marked `degraded` in the ledger and in every benchmark |
-
-A judge with no API key sees the same decisions as one with a live model, and the audit trail always says which tier decided.
-
----
-
-## Build quality: what is actually proved
-
-| Evidence | Result |
+| Decision | Why not |
 |---|---|
-| Exhaustive model check over the mandate state space | **510,720 reachable states · 8,390,192 transitions · 9 invariants · 0 violations** |
-| Property tests over the gatekeeper | 20,000 randomised inputs, 40,000 `Decide` calls, adversarial corpus |
-| Deterministic simulation (virtual clock, seeded scheduler, fault injection) | Byte-identical traces from a seed |
-| Race detector | Clean across every concurrent package |
-| Test suite | 603 test functions · 20,488 lines of tests against 28,092 lines of code |
-| Secret / private-material scanner | 7 checks, runs in CI, blocks the commit |
-| Direct dependencies | **6** — pgx, go-redis, miniredis, embedded-postgres, uuid, x/time. No ORM, no web framework, no metrics library |
-
-The model checker is the point. Property testing samples; this enumerates. Where a property test can say only *"no counterexample in 20,000 draws"*, the model checker says **there is none**, and prints a digest so a change in the gate's behaviour cannot pass unnoticed.
-
-### The 14 invariants the gatekeeper enforces
-
-`AMOUNT_PINNED` · `TERMINAL_DECLINE` · `STOP_RULE_MAX_ATTEMPTS` · `LOW_CONFIDENCE_ABSTAIN` · `UNRECOVERABLE_CLASS` · `SESSION_REQUIRED_FOR_MORPH` · `RAIL_ALLOWLIST` · `RBI_MANDATE_COOLING` · `RBI_PRE_DEBIT_NOTICE` · `RBI_AFA_CEILING` · `MANDATE_HALTED` · `MANDATE_CYCLE_CAP` · `INSTRUMENT_REFRESH_ALLOWED` · `DELAY_BOUNDS`
-
-Every one that fires is written to the ledger with its reason. The console shows them per incident. **An abstention is recorded as carefully as an action** — a recovery system that logs only its successes cannot be audited.
+| Anything at all | The gatekeeper is 14 pure functions. Model output is an input to it, never a substitute for it. |
+| Money | Amounts are copied from the signed payload. |
+| Regulatory timing | RBI's cooling window and pre-debit notice are arithmetic on timestamps. A model that is 99 percent right about a legal minimum is 100 percent unusable. |
+| Retry budgets and backoff | Bounded arithmetic, not judgment. |
+| The ledger | Written by the code that acted, hashed by a function with no configuration. |
 
 ---
 
-## Failure recovery: what broke, and what I did about it
+## The fourteen invariants
 
-Not a list of bugs. The interesting ones are where the *method* found what review would not have.
+Every one is a pure function of state, and every refusal is written to the ledger naming the
+invariant that caused it.
 
-**1. The model checker found two defects that 20,000 property-test cases missed.**
-`RBI_AFA_CEILING` was specified and never implemented — a recurring debit above ₹15,000 would have been retried without an additional factor, which is a regulatory breach, not a suboptimal choice. And `EXECUTABLE_NAMES_A_RAIL` failed at **29,952 states**: the gatekeeper carried its own local notion of which actions execute, that notion predated the instrument-refresh action, so `DELAY_BOUNDS` cleared the rail the refresh rule had just set and the gate emitted an executable command naming no rail. The property test missed both because the corpus never generated a refresh. Fixed by deriving the predicate from the domain type — the class of bug, not the instance — then extending the corpus. **58,512 violations → 0.**
+| Invariant | What it prevents |
+|---|---|
+| `AMOUNT_PINNED` | The amount can only come from the signed payload |
+| `TERMINAL_DECLINE` | A decline no retry can fix, so no fee is spent on it |
+| `STOP_RULE_MAX_ATTEMPTS` | The per-incident retry ceiling |
+| `LOW_CONFIDENCE_ABSTAIN` | The model was not sure enough to spend money |
+| `UNRECOVERABLE_CLASS` | Retrying this class cannot help |
+| `SESSION_REQUIRED_FOR_MORPH` | No live checkout to move, so no rail morph |
+| `RAIL_ALLOWLIST` | The merchant never enabled that rail |
+| `RBI_MANDATE_COOLING` | RBI's 24-hour gap between recurring debits |
+| `RBI_PRE_DEBIT_NOTICE` | The payer must be warned before a debit |
+| `RBI_AFA_CEILING` | Above ₹15,000 (₹1,00,000 for some categories) a debit needs a fresh authentication factor |
+| `MANDATE_HALTED` | This mandate must not be debited again |
+| `MANDATE_CYCLE_CAP` | Attempts allowed within one billing cycle |
+| `INSTRUMENT_REFRESH_ALLOWED` | Re-present the token rather than the dead card |
+| `DELAY_BOUNDS` | The schedule stays inside a sane horizon |
 
-**2. Five fail-open defects in my own frozen contracts, found by the packages consuming them.**
-The worst: `Validate()` accepted `NaN` as a confidence score. Every ordered comparison against `NaN` is false, so `conf < floor` waved it straight through and a `NaN` read as maximum confidence. The fix is written as a positive assertion — `!(conf >= floor && conf <= 1)` — because the negative form is the bug. Also: `Recoverable()` defaulted to `true` (a new failure class would have become retryable by omission); provenance fields had live JSON tags, so a model could forge its own tier; `Degraded()` was blind when the baseline was zero.
+### Proof, not assertion
 
-**3. The offline path recovered nothing, and only an end-to-end run showed it.**
-Every unit test passed. Booting the whole system revealed **every incident abstaining**: the heuristic tier had no rule for the ambiguous or soft codes, so with no API key the system diagnosed 12 incidents and acted on one. Unit tests could not see it because each component was individually correct. Fixed by giving the deterministic tier the codes whose cause the taxonomy already states — which is also the honest boundary described above.
+```
+$ go run ./cmd/modelcheck
 
-**4. A test that passed for the wrong reason.**
-`miniredis` never ages pending-entry idle time, so a queue-reclaim test was passing without exercising reclaim at all. I rewrote it honestly against `MinIdle=0` and documented the fake server's limitation rather than keeping a green tick. Finding it exposed a real API bug next door: `minIdle <= 0` collapsed *"use the default"* with *"claim regardless of idle time"*, making zero unreachable.
+  abstract states     1612800
+  reachable states    510720
+  transitions         8390192
+  elapsed             3862 ms
 
-**5. Path traversal into the gateway URL.**
-`url.PathEscape` was insufficient because the HTTP client re-parses the URL and traversal segments survive re-parsing. Replaced with a strict allowlist on the identifier itself.
+  [HOLDS ] AMOUNT_PINNED                 510720 checked   0 violations
+  [HOLDS ] RECURRING_COOLING_AND_NOTICE  510720 checked   0 violations
+  [HOLDS ] ATTEMPT_CAP                   510720 checked   0 violations
+  [HOLDS ] AFA_CEILING                   510720 checked   0 violations
+  [HOLDS ] CLOSED_ACTION_SET             510720 checked   0 violations
+  [HOLDS ] REFRESH_PRESERVES_TERMS       510720 checked   0 violations
+  [HOLDS ] EXECUTABLE_NAMES_A_RAIL       510720 checked   0 violations
+  [HOLDS ] SCHEDULE_BOUNDED              510720 checked   0 violations
+  [HOLDS ] GATE_DECIDES_WITHOUT_ERROR    510720 checked   0 violations
 
-**6. An IDOR in the source design's own event stream.**
-The plan called for `/stream/{order_id}`. Order ids are guessable and routinely shared, so that streams a stranger's recovery progress to anyone who can iterate. Changed to an opaque session id plus a single-purpose bearer token, stored only as a hash, compared in constant time — recorded as ADR-011.
+total violations 0
+```
 
-**7. A retried write that double-counted real money, and an outage that destroyed events.**
-Deterministic simulation with fault injection found both. The attempt-commit path
-is retried on purpose — losing the record of a debit is worse than the debit —
-but it was not idempotent, so a failure *after* the insert re-ran it and recorded
-the same attempt twice, double-counting a gateway fee and inflating every
-recovery-rate measurement. Separately, the outbox relay called `MarkOutboxFailed`
-on every publish failure, which sets state to `FAILED`; since claims only select
-`PENDING` rows, the *first* failure parked a row permanently and the eight-attempt
-budget was unreachable. The relay's own comment said a publish failure is "almost
-always the queue being unavailable, not this particular row being bad" — and the
-code did the opposite. Both fixed; the full account, including **one finding still
-open and unfixed**, is in [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md).
+Property testing samples. **Model checking enumerates.** Where a property test can only say
+"no counterexample in 20,000 draws", this says there is none. That distinction found two real
+bugs: see [the post-mortem](docs/POSTMORTEM.md).
 
-**8. The race detector did not work, and the honest fix was to say so.**
-`gcc` on `PATH` was 32-bit MinGW. `scripts/judge.ps1` now resolves a working 64-bit toolchain and **reports plainly when none exists** rather than quietly running without `-race`. A green suite that silently skipped the race detector is worse than a red one.
+---
+
+## The audit ledger
+
+Every consequential decision is hash-chained. Fields are absorbed **length-prefixed**, an
+8-byte big-endian length then the bytes, rather than concatenated, so an attacker who controls
+two adjacent fields cannot forge a collision by shifting the boundary between them.
+
+```go
+h := sha256.New()
+absorbUint(h, uint64(e.Seq))
+absorbStr(h, e.IncidentID)
+absorbStr(h, string(e.Kind))
+absorbStr(h, e.Actor)
+absorb(h, e.Detail)
+absorbUint(h, uint64(e.At.UTC().UnixNano()))
+absorbStr(h, e.PrevHash)
+```
+
+The demonstration attacks it. It edits a row **in the middle of the chain** directly in
+PostgreSQL, as an attacker with database access would, and requires verification to localise
+the break to that exact sequence number. A ledger that only catches a modified head catches
+nothing, because the head is what an attacker rewrites last.
+
+**You can check this without running anything.** The
+[evidence page](https://huggingface.co/spaces/hriday29/resilientmesh) ships all 538 entries of
+a real run as the exact bytes the ledger hashed, re-derives every digest with `crypto.subtle`
+in your browser, and gives you a button that plants a forgery.
+
+<div align="center">
+<img src="docs/img/space-verify.png" alt="The audit chain re-verified in the browser" width="880">
+</div>
+
+---
+
+## The system while it runs
+
+`go run ./cmd/meshdemo -keep` leaves everything up. The operations console is read-only.
+Every mutating action lives in `meshctl` behind an explicit `--yes`.
+
+<div align="center">
+<img src="docs/img/ops-console.png" alt="ResilientMesh operations console" width="900">
+<br><em>Live issuer health with circuit-breaker state, the inference-tier split, and the audit chain with its hashes.</em>
+</div>
+
+The checkout page exists for one reason: in-session rail morphing needs a live session to
+move, and a session that only exists in a test is not evidence that the path works.
+
+<div align="center">
+<img src="docs/img/checkout.png" alt="Checkout with a live SSE session" width="560">
+</div>
+
+---
+
+## Build quality
+
+| Claim | How to check it | Result |
+|---|---|---|
+| It runs on a clean machine | `go run ./cmd/meshdemo` | boots in ~29 s from an empty database |
+| It runs as a pass/fail gate | `go run ./cmd/meshctl selftest` | requires a *completed* recovery, then plants a tamper and requires detection at the exact row |
+| The invariants hold everywhere | `go run ./cmd/modelcheck` | 510,720 states, 8,390,192 transitions, 0 violations |
+| It survives faults | `go run ./cmd/meshsim --seed 42 --chaos standard` | deterministic, byte-identical traces, 9 invariants checked |
+| The suite is green | `go test ./... -count=1` | domain 98.3%, simulation 87.7% statement coverage |
+| It is race-free | `go test ./... -race` | clean |
+| Nothing private is tracked | `go run ./cmd/leakscan` | 1,242 tracked files, PASS |
+| Every gate at once | `./scripts/judge.sh` | writes a report to `artifacts/` |
+
+### Dependencies
+
+Six direct, all of them load-bearing:
+
+| Module | Why |
+|---|---|
+| `jackc/pgx/v5` | PostgreSQL driver and pool |
+| `redis/go-redis/v9` | Redis Streams consumer groups |
+| `alicebob/miniredis/v2` | a real RESP server in-process, so managed mode needs no Redis |
+| `fergusstrange/embedded-postgres` | real PostgreSQL 18.3 in-process, so managed mode needs no Docker |
+| `google/uuid` | identifiers |
+| `golang.org/x/time` | rate limiting |
+
+There is one code path. Managed mode starts real PostgreSQL and a real RESP server and hands
+back connection strings shaped exactly like the ones external mode takes from an operator, so
+nothing downstream branches on how the infrastructure was started. **A demo path that diverges
+from the production path proves nothing about the production path.**
+
+---
+
+## What broke, and what I did about it
+
+Nine real defects, none of them found by reading the code. Full write-ups in
+[docs/POSTMORTEM.md](docs/POSTMORTEM.md). The last one is **still open and left failing on
+purpose**.
+
+| # | Found by | What it was |
+|---|---|---|
+| 1 | Exhaustive model checking | `RBI_AFA_CEILING` was specified and never implemented. A mandate above ₹15,000 would have been retried without a fresh authentication factor. `EXECUTABLE_NAMES_A_RAIL` failed at 29,952 states. **58,512 violations to 0.** |
+| 2 | Reviewing consumers, not definitions | `Validate()` accepted `NaN` as a confidence score. Every ordered comparison against NaN is false, so `conf < floor` waved it through and downstream read it as *maximum* confidence. Four more fail-open contracts beside it. |
+| 3 | Unicode case folding | `strings.ToUpper` applies *Unicode* case mapping, so U+017F (ſ) uppercases to ASCII S and `ParseAction("AſYNC_EXPONENTIAL_RETRY")` returned a valid action. These parsers sit directly on the model boundary. |
+| 4 | Booting the whole thing | The offline path recovered nothing. Every unit test passed; the deterministic tier had no rule for soft declines, so a reviewer with no API key watched a recovery system recover nothing. |
+| 5 | Booting the whole thing | Deferred recoveries were silently dropped. A comment claimed a scheduler would collect them. **There was no scheduler.** The ledger recorded correct decisions that never happened. |
+| 6 | Deterministic simulation | A retried write double-counted money. The `attempts` table had an index on `(incident, attempt)` but no uniqueness, so a fault after `RecordAttempt` inserted a second row and inflated every measurement, in the direction that flatters the system. |
+| 7 | Deterministic simulation | A transient broker outage permanently destroyed events. The relay parked a row on its *first* publish failure, and the claim itself charged an attempt. The relay's own comment stated the correct principle and the code did the opposite. |
+| 8 | Running the demo twice | The demonstration poisoned its own next run: act 5 forges a ledger row and does not repair it, and the next run inherited that forgery through a reused data directory. Fixed by giving the demo its own database and emptying it every run. Adding a repair path for one's own audit trail would have been the wrong fix. |
+| 9 | **OPEN** | The reconciler amplifies during an outage: a parked outbox row is not `PENDING`, so the reconciler treats its incident as stalled and inserts a replacement, which parks too. 20,434 rows from 400 incidents. **Two fixes were attempted and both reverted.** One traded a loud failure for a silent one; the other stopped the run draining for reasons I did not fully characterise. A verification harness edited until it agrees with the system is not a harness, and a fix I cannot explain is not a fix. |
+
+Reproduce the open one:
+
+```bash
+go run ./cmd/meshsim --seed 20260904 --incidents 400
+# invariant NO_EVENT_LOST violated: 20434 outbox rows exhausted their
+# publish budget and were dead-lettered
+```
 
 ---
 
 ## Security
 
-Highest weight in this build. Full model in [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
+The bar was: nothing internal reaches GitHub, and nothing internal reaches a user.
 
-**Trust boundary.** Webhook order is the design: body cap → HMAC verify (constant-time, rotation window) → parse → skew → taxonomy → admission control → transaction. Parsing before verifying would mean parsing attacker-controlled bytes.
-
-**The model is never trusted.** It receives an allowlisted, bucketed context with no PII. It returns a proposal with no amount field. The gatekeeper is authoritative. Prompt-injection attempts are in the test corpus, including reasoning traces that impersonate the decision format.
-
-**Audit ledger.** Hash-chained with **length-prefixed field absorption**. Naive concatenation lets an attacker who controls two adjacent fields forge a colliding entry by shifting the boundary between them. Sequence and previous-hash allocation is serialised with a transaction-scoped advisory lock, so concurrent writers cannot fork the chain. Verification recomputes every link; it never compares a stored hash to itself.
-
-**Nothing private is publishable.** `cmd/leakscan` runs in CI over every tracked file: private-path, credential shape, private references, `.env.example` hygiene, DOM-sink usage, dependency allowlist, control characters. Planning documents, strategy notes and the source brief live in a git-ignored directory and are **not in this repository**.
-
-Test fixtures that need credential shapes **compose them at run time** via `internal/testsecret`. The usual escape — teaching the scanner to skip test files — would exempt the files most likely to hold a pasted-in key, and a scanner with that exemption is not a scanner.
-
-**Web surface.** Strict CSP, no `unsafe-inline`, no CDN, no external font. Every value rendered with `textContent`; `innerHTML` appears nowhere. Ops surfaces behind a bearer token compared in constant time, including `/metrics` — an open metrics endpoint leaks issuer names, volumes and failure rates.
+- **Webhooks** are HMAC-verified with a constant-time compare **before anything parses the
+  body**, with a bounded timestamp skew in both directions so a captured delivery cannot be
+  replayed indefinitely.
+- **The model boundary** is described above. It is enforced by types, not by prompt wording.
+- **Money** is integer paisa end to end. Floats are banned from money paths.
+- **The operations console** is read-only and behind a per-run token. Every mutation lives in
+  `meshctl` behind `--yes`, and writes its intent to the ledger *before* acting.
+- **The web UI** is CSP-strict and writes through `textContent` only, never `innerHTML`.
+- **`cmd/leakscan`** is a committed scanner, run in CI over every tracked file: credential
+  shapes, private-document paths, `.env` values, and control characters in tracked text. Test
+  fixtures compose credential-shaped strings at runtime (`internal/testsecret`) so no tracked
+  file contains a literal matching a scanner pattern, and no scanner exemptions are needed.
+- **The exported run** is scrubbed of every secret before it is written, and the writer
+  **refuses to write the file at all** if a secret survives redaction.
+- **`.env` loading** accepts `MESH_`-prefixed names only, so a dotfile that lands in a checkout
+  cannot set `PATH` or `LD_PRELOAD`.
 
 ---
 
-## Repository map
+## Repository layout
 
-| Path | What lives there |
+```
+cmd/
+  meshdemo     the guided demonstration; start here
+  mesh         the whole system in one process
+  meshctl      operator CLI: selftest, audit verify, dlq replay, mandate halt
+  modelcheck   exhaustive state-space walk over the gatekeeper
+  meshsim      deterministic simulation with fault injection
+  leakscan     the secret and private-document scanner CI runs
+  api, worker, simulator
+internal/
+  domain       frozen contracts: taxonomy, decisions, records, hashing
+  gatekeeper   the 14 invariants
+  agent        the three inference tiers
+  ingest       the webhook trust boundary
+  outbox       transactional outbox relay
+  queue        Redis Streams consumer group and DLQ
+  worker       the decision loop, sweeper and executor wiring
+  store        PostgreSQL, migrations, hash-chain allocation
+  audit        the ledger
+  infra        embedded PostgreSQL and RESP, for managed mode
+  simulation   the deterministic simulator and its invariants
+space/         the published evidence page
+docs/          EVALUATING.md, POSTMORTEM.md
+eval/          the four-policy benchmark
+```
+
+---
+
+## Submission
+
+| | |
 |---|---|
-| `internal/domain/` | Frozen contracts: wire types, taxonomy, the trust-boundary types |
-| `internal/gatekeeper/` | The 14 invariants — the authoritative decision |
-| `internal/agent/` | Three-tier inference, context digest, prompt construction |
-| `internal/worker/` | The recovery pipeline |
-| `internal/store/`, `internal/audit/` | Transactional outbox, hash-chained ledger |
-| `internal/queue/`, `internal/outbox/` | Redis Streams, DLQ, relay |
-| `internal/modelcheck/` | Exhaustive state-space proof |
-| `internal/simulation/` | Deterministic simulation testing |
-| `internal/simulator/` | Razorpay API simulator |
-| `internal/app/` | The single composition root the three binaries share |
-| `cmd/mesh` | One-command everything |
-| `cmd/api`, `cmd/worker` | Split deployment |
-| `cmd/modelcheck`, `cmd/meshsim`, `cmd/leakscan` | Verification tooling |
-| `eval/` | Offline benchmark: four policies, paired bootstrap, attestation manifest |
-| `docs/` | Architecture, threat model, runbook, SLOs, data handling |
-| `decisions.md` | Architecture decision records |
+| **Name** | Hriday Vig |
+| **College** | Maharaja Surajmal Institute of Technology |
+| **Graduating** | 2028 |
+| **Track** | Track 03, AI Revenue Recovery |
+| **Project** | ResilientMesh |
+| **What it solves** | Failed payments in India are recovered today by blind retries that burn gateway fees, annoy customers, and on recurring mandates can breach RBI's e-mandate rules. ResilientMesh decides each failure on evidence, refuses the ones no retry can fix, obeys the regulatory constraints as hard invariants rather than as prompt instructions, and leaves a tamper-evident record of every decision including the refusals. |
+| **Repository** | https://github.com/vighriday/ResilientMesh-Razorpaybuildathon |
+| **Evidence page** | https://huggingface.co/spaces/hriday29/resilientmesh |
+| **Pitch video** | *(to be added)* |
 
 ---
 
-## Documentation
+<div align="center">
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — components, data flow, failure domains
-- [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — assets, adversaries, controls
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — operator procedures
-- [`docs/SLO.md`](docs/SLO.md) — objectives and error budgets
-- [`docs/DATA.md`](docs/DATA.md) — what is stored, what never is
-- [`docs/EVALUATING.md`](docs/EVALUATING.md) — how to run and verify everything, from scratch
-- [`docs/POSTMORTEM.md`](docs/POSTMORTEM.md) — every defect found during this build, including one still open
-- [`decisions.md`](decisions.md) — ADRs, including the ones that changed the design
+### Anyone can make an agent act.
+
+### The hard part is proving, afterwards, that it was allowed to.
+
+<br>
+
+**`go run ./cmd/meshdemo`**
+
+Two minutes. No account, no key, no Docker. Then plant a forgery in the ledger
+and watch it name the row you touched.
+
+</div>

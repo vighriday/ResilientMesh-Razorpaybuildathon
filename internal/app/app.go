@@ -141,6 +141,13 @@ type Options struct {
 	// in managed mode, for a caller that has already started them and wants a
 	// second App against the same backing services.
 	SkipManagedInfra bool
+	// ManagedDataDir overrides where managed PostgreSQL keeps its cluster.
+	// Empty uses the package default.
+	//
+	// It exists so a caller whose run must start from an empty database can own
+	// a directory it is allowed to delete, without reaching into the directory
+	// an operator's own `go run ./cmd/mesh` has warmed up.
+	ManagedDataDir string
 }
 
 // New builds the system. On any failure it releases whatever it had already
@@ -187,8 +194,9 @@ func New(ctx context.Context, cfg config.Config, opts Options) (a *App, err erro
 
 	if cfg.InfraMode == config.InfraManaged && !opts.SkipManagedInfra {
 		rt, startErr := infra.StartManaged(ctx, infra.Options{
-			Logger: logger,
-			Clock:  clock,
+			DataDir: opts.ManagedDataDir,
+			Logger:  logger,
+			Clock:   clock,
 		})
 		if startErr != nil {
 			return nil, fmt.Errorf("app: starting managed infrastructure: %w", startErr)

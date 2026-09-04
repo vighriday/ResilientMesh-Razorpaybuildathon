@@ -48,6 +48,19 @@ const (
 
 	pollEvery = 1500 * time.Millisecond
 
+	// demoDataDir is this command's own PostgreSQL cluster, separate from the
+	// one `go run ./cmd/mesh` warms up.
+	//
+	// It needs its own because act 5 deliberately forges a ledger row and does
+	// not repair it — the whole point is that the forgery is detectable, and a
+	// production system with a repair path for its own audit trail has no audit
+	// trail. A shared directory therefore carried the previous run's forgery
+	// into the next one, which failed at boot with a chain broken before it had
+	// written anything. The directory is emptied at the start of every run, so
+	// the claim that a run is a pure function of its seed is true on the second
+	// run as well as the first.
+	demoDataDir = ".mesh/demo"
+
 	rule = "────────────────────────────────────────────────────────────────────────────"
 )
 
@@ -59,6 +72,8 @@ type options struct {
 	keepUp   bool
 	noColour bool
 	out      string
+	export   string
+	soak     time.Duration
 }
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -77,6 +92,11 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 		"leave the system running afterwards so the console and checkout can be opened")
 	fs.BoolVar(&o.noColour, "no-colour", false, "disable ANSI styling")
 	fs.StringVar(&o.out, "out", "artifacts/DEMO_REPORT.md", "where to write the transcript")
+	fs.StringVar(&o.export, "export", "",
+		"also write the whole run as structured JSON, for the published evidence page")
+	fs.DurationVar(&o.soak, "soak", 0,
+		"let traffic keep running for this long before the outcome is read, so a "+
+			"published run shows a fuller window than the minimum each act waits for")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -101,7 +121,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := demo(ctx, opts, t); err != nil {
+	d, err := demo(ctx, opts, t)
+	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			t.line("\nInterrupted. Shutting down cleanly.")
 			return 0
@@ -109,6 +130,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		t.fail(err.Error())
 		_ = t.save(opts.out)
 		return 1
+	}
+	// Written after the narration is complete so the exported document and the
+	// transcript describe the same run rather than two adjacent ones.
+	if d != nil {
+		d.Narration = t.rec
+		d.Acts = actsFrom(t.rec)
+		if err := d.write(opts.export, d.secrets); err != nil {
+			fmt.Fprintf(stderr, "meshdemo: could not write the run: %v\n", err)
+			return 1
+		}
+		if opts.export != "" {
+			t.line("")
+			t.line("Run exported to " + opts.export)
+		}
 	}
 	if err := t.save(opts.out); err != nil {
 		fmt.Fprintf(stderr, "meshdemo: could not write the transcript: %v\n", err)
@@ -119,8 +154,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func demo(ctx context.Context, opts options, t *transcript) error {
+func demo(ctx context.Context, opts options, t *transcript) (*dossier, error) {
 	began := time.Now()
+	d := &dossier{Commit: gitCommit(ctx)}
 
 	// ---- Preflight ---------------------------------------------------------
 	t.banner("ResilientMesh — guided demonstration")
@@ -130,7 +166,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("loading configuration: %w", err)
+		return nil, fmt.Errorf("loading configuration: %w", err)
 	}
 	cfg.InfraMode = config.InfraManaged
 	cfg.DemoTimeScale = demoSpeed
@@ -151,6 +187,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 	// ---- Act 0: boot -------------------------------------------------------
 	t.act(0, "Booting the real system")
 	t.step("Starting embedded PostgreSQL 18.3 and an in-process Redis server")
+	t.step("Initialising an empty database, so this run depends on nothing before it")
 	bootStart := time.Now()
 
 	sim, err := simulator.NewEmbedded(simulator.EmbeddedConfig{
@@ -165,14 +202,18 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		Log:       log,
 	})
 	if err != nil {
-		return fmt.Errorf("starting the Razorpay simulator: %w", err)
+		return nil, fmt.Errorf("starting the Razorpay simulator: %w", err)
 	}
 	defer sim.Stop()
 	cfg.RazorpayBaseURL = sim.BaseURL()
 
-	a, err := app.New(ctx, cfg, app.Options{Logger: log})
+	if err := os.RemoveAll(demoDataDir); err != nil {
+		return nil, fmt.Errorf("clearing the previous demonstration database at %s: %w",
+			demoDataDir, err)
+	}
+	a, err := app.New(ctx, cfg, app.Options{Logger: log, ManagedDataDir: demoDataDir})
 	if err != nil {
-		return fmt.Errorf("building the system: %w", err)
+		return nil, fmt.Errorf("building the system: %w", err)
 	}
 	defer func() { _ = a.Close() }()
 
@@ -189,7 +230,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		Log:       log,
 	})
 	if err != nil {
-		return fmt.Errorf("starting the webhook emitter: %w", err)
+		return nil, fmt.Errorf("starting the webhook emitter: %w", err)
 	}
 	defer emitter.Stop()
 
@@ -211,7 +252,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		Log:       log,
 	})
 	if err != nil {
-		return fmt.Errorf("starting the mandate emitter: %w", err)
+		return nil, fmt.Errorf("starting the mandate emitter: %w", err)
 	}
 	defer mandates.Stop()
 
@@ -224,6 +265,14 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 	go func() { _ = mandates.Run(runCtx) }()
 
 	pg := a.Store()
+	d.Run = runMetaFrom(cfg, opts, tier, tierWhy, time.Since(bootStart).Seconds())
+	// Collected from the resolved configuration rather than from the environment,
+	// because managed mode generates most of these at boot and they exist nowhere
+	// else.
+	d.secrets = []string{
+		a.Config().OpsToken, a.Config().WebhookSecret,
+		a.Config().RazorpayKeySecret, a.Config().LLMAPIKey,
+	}
 	t.ok(fmt.Sprintf("Up in %.1fs — API on %s, Razorpay API on %s",
 		time.Since(bootStart).Seconds(), a.Addr(), sim.Addr()))
 	t.line("")
@@ -245,13 +294,14 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		n, err := countIncidents(ctx, pg)
 		return fmt.Sprintf("%d incidents recorded", n), n >= 8, err
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	incidents, err := pg.ListIncidents(ctx, 500)
 	if err != nil {
-		return fmt.Errorf("reading incidents: %w", err)
+		return nil, fmt.Errorf("reading incidents: %w", err)
 	}
+	d.Incidents = viewIncidents(incidents, 12)
 	t.line("")
 	t.table([]string{"PAYMENT", "ISSUER", "DECLINE", "AMOUNT", "STATE"},
 		incidentRows(incidents, 8))
@@ -270,12 +320,12 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		n, err := countAudit(ctx, pg, domain.AuditGateDecision)
 		return fmt.Sprintf("%d gate decisions", n), n >= 6, err
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	story, err := firstFullStory(ctx, pg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if story != "" {
 		t.line("")
@@ -288,8 +338,9 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 
 	tiers, err := tierMix(ctx, pg)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	d.Tiers = countRows(tiers, []string{"LIVE", "REPLAY", "HEURISTIC", "SKIPPED"})
 	t.line("")
 	t.kv("Decided by", renderTiers(tiers))
 	t.note("Every decision names the tier that made it. A model returning " +
@@ -307,14 +358,16 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		return fmt.Sprintf("%d distinct invariants have refused something", len(v)),
 			len(v) >= 2, err
 	}); err != nil {
-		return err
+		return nil, err
 	}
 	t.line("")
 
 	vetoes, err := vetoBreakdown(ctx, pg)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	d.Vetoes = vetoRowsExport(vetoes)
+	d.Invariants = captureInvariants(vetoes)
 	if len(vetoes) == 0 {
 		t.line("     Nothing was refused in this window. That is a real outcome, not")
 		t.line("     a placeholder: with -rate low enough, every proposal can be legal.")
@@ -336,16 +389,35 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		return fmt.Sprintf("%d recovered, %d scheduled, %d abstained",
 			st["RECOVERED"], st["SCHEDULED"], st["ABSTAINED"]), st["RECOVERED"] >= 3, err
 	}); err != nil {
-		return err
+		return nil, err
+	}
+
+	// Each act above stops at the first moment its claim is true, which keeps
+	// an interactive run short. A run that is going to be published is read by
+	// people who cannot re-run it, so -soak lets the same traffic continue for
+	// a stated interval first. It changes how much happened, never what the
+	// system decided about any of it.
+	if opts.soak > 0 {
+		if err := soakFor(ctx, t, pg, opts.soak); err != nil {
+			return nil, err
+		}
 	}
 
 	st, err := stateCounts(ctx, pg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	recovered, fees, err := recoveredValue(ctx, pg)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	d.States = countRows(st, []string{
+		"RECOVERED", "SCHEDULED", "EXECUTING", "ABSTAINED", "RECEIVED", "FAILED"})
+	d.Economics = economics{
+		RecoveredPaisa: recovered, FeesPaisa: fees,
+		Recovered: formatPaisa(recovered), Fees: formatPaisa(fees),
+		RatioNote: "measured over this run's window only; the four-policy " +
+			"benchmark in eval/ is the comparison that controls for incident mix",
 	}
 	t.line("")
 	t.table([]string{"OUTCOME", "COUNT"}, stateRows(st))
@@ -363,16 +435,42 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 	t.line("forge a collision by shifting the boundary between them.")
 	t.line("")
 
+	// The tables above were read the moment each act could first make its
+	// claim, which is what keeps an interactive run short. The exported document
+	// is read once, by someone who cannot re-run it, so it carries the final
+	// state of the same run rather than six snapshots taken at different times.
+	if err := refreshExport(ctx, d, pg); err != nil {
+		return nil, err
+	}
+
+	// The case file and the chain are captured before the tamper, so the
+	// published page carries an intact ledger. A reader who re-derives the
+	// digests should get a clean chain; the forgery is theirs to plant, in
+	// their own browser, from the same bytes.
+	caseFile, err := captureCase(ctx, pg)
+	if err != nil {
+		return nil, err
+	}
+	d.Case = caseFile
+
 	ledger := audit.New(pg, systemClock{}, "demo")
 	before, err := ledger.Verify(ctx)
 	if err != nil {
-		return fmt.Errorf("verifying the ledger: %w", err)
+		return nil, fmt.Errorf("verifying the ledger: %w", err)
 	}
 	t.ok(fmt.Sprintf("Chain intact: %d entries verified, head %s",
 		before.Entries, short(before.HeadHash)))
 	if !before.Valid {
-		return fmt.Errorf("the ledger was already broken at sequence %d", before.BreakAtSeq)
+		return nil, fmt.Errorf("the ledger was already broken at sequence %d", before.BreakAtSeq)
 	}
+	chain, err := captureChain(ctx, pg)
+	if err != nil {
+		return nil, err
+	}
+	if !chain.Valid {
+		return nil, errors.New("the exported chain does not verify against its own bytes")
+	}
+	d.Chain = chain
 
 	target := before.Entries / 2
 	if target < 1 {
@@ -385,22 +483,26 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 		"action": "IN_SESSION_RAIL_MORPH",
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := pg.MutateAuditDetailForTest(ctx, target, forged); err != nil {
-		return fmt.Errorf("tampering with sequence %d: %w", target, err)
+		return nil, fmt.Errorf("tampering with sequence %d: %w", target, err)
 	}
 
 	after, err := ledger.Verify(ctx)
 	if err != nil {
-		return fmt.Errorf("re-verifying the ledger: %w", err)
+		return nil, fmt.Errorf("re-verifying the ledger: %w", err)
 	}
 	if after.Valid {
-		return errors.New("the ledger accepted a forged row: tamper-evidence is not working")
+		return nil, errors.New("the ledger accepted a forged row: tamper-evidence is not working")
 	}
 	if after.BreakAtSeq != target {
-		return fmt.Errorf("tamper detected at %d but row %d was edited; verification "+
+		return nil, fmt.Errorf("tamper detected at %d but row %d was edited; verification "+
 			"is not localising the break", after.BreakAtSeq, target)
+	}
+	d.Tamper = tamperExport{
+		TargetSeq: target, DetectedSeq: after.BreakAtSeq, Cause: after.BreakCause,
+		ValidBefore: before.Valid, ValidAfter: after.Valid,
 	}
 	t.ok(fmt.Sprintf("Detected at entry %d — the exact row that was edited", after.BreakAtSeq))
 	t.line("     Cause: " + after.BreakCause)
@@ -427,6 +529,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 	}
 
 	// ---- Close -------------------------------------------------------------
+	d.Run.ElapsedSecs = time.Since(began).Seconds()
 	t.banner("Done")
 	t.kv("Elapsed", fmt.Sprintf("%.0f seconds", time.Since(began).Seconds()))
 	t.line("")
@@ -456,7 +559,7 @@ func demo(ctx context.Context, opts options, t *transcript) error {
 
 	stopRun()
 	<-done
-	return nil
+	return d, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -887,3 +990,34 @@ func formatPaisa(p int64) string {
 type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now() }
+
+// soakFor lets the scripted traffic keep running for a stated interval,
+// reporting what accumulates so the wait is legible rather than a stall.
+func soakFor(ctx context.Context, t *transcript, pg *store.Postgres, d time.Duration) error {
+	t.step(fmt.Sprintf("Letting the outage run for a further %s before reading the outcome", d))
+	deadline := time.Now().Add(d)
+	tick := time.NewTicker(pollEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			t.endProgress()
+			return ctx.Err()
+		case <-tick.C:
+			st, err := stateCounts(ctx, pg)
+			if err != nil {
+				t.endProgress()
+				return err
+			}
+			left := time.Until(deadline).Truncate(time.Second)
+			if left <= 0 {
+				t.endProgress()
+				t.ok(fmt.Sprintf("Soak complete: %d recovered, %d scheduled, %d abstained",
+					st["RECOVERED"], st["SCHEDULED"], st["ABSTAINED"]))
+				return nil
+			}
+			t.progress(fmt.Sprintf("%s left — %d recovered, %d scheduled, %d abstained",
+				left, st["RECOVERED"], st["SCHEDULED"], st["ABSTAINED"]))
+		}
+	}
+}

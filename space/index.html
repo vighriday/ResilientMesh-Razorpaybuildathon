@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ResilientMesh · a deterministic control plane for AI-driven payment recovery</title>
+<meta name="description" content="One real run of ResilientMesh, exported. Re-verify its tamper-evident audit ledger in your own browser, then plant a forgery in it.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232b5cff'/><g fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'><path d='M18.4 10.4h1.9a5.6 5.6 0 0 1 0 11.2h-1.9'/><path d='M13.6 21.6h-1.9a5.6 5.6 0 0 1 0-11.2h1.9'/><path d='M11.9 16h8.2'/></g></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a id="top"></a>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="ResilientMesh, home">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="30" height="30" role="img" focusable="false">
+          <defs>
+            <linearGradient id="rm-g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#4d7cff"/>
+              <stop offset="1" stop-color="#1e3fd8"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="9" fill="url(#rm-g)"/>
+          <g fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round">
+            <path d="M18.4 10.4h1.9a5.6 5.6 0 0 1 0 11.2h-1.9"/>
+            <path d="M13.6 21.6h-1.9a5.6 5.6 0 0 1 0-11.2h1.9"/>
+            <path d="M11.9 16h8.2"/>
+          </g>
+        </svg>
+      </span>
+      <span class="wordmark"><b>Resilient</b>Mesh</span>
+    </a>
+    <nav class="topnav" id="topnav">
+      <a href="#position">Position</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#run">The run</a>
+      <a href="#case">One case</a>
+      <a href="#judgment">AI judgment</a>
+      <a href="#invariants">Invariants</a>
+      <a href="#verify">Verify it</a>
+      <a href="#broke">What broke</a>
+      <a href="#reproduce">Run it</a>
+    </nav>
+    <button class="icon-btn" id="theme-toggle" type="button" title="Switch theme" aria-label="Switch theme">◑</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Razorpay AI Buildathon · Track 03 · AI Revenue Recovery</div>
+
+    <h1>A failed payment is a decision, not a retry.</h1>
+
+    <p class="lede">
+      ResilientMesh is the <strong>deterministic control plane</strong> that sits between a
+      language model and a merchant's money. The model may describe what it thinks went
+      wrong. It may never decide what happens next, never name an amount, and never move a
+      rupee. Fourteen deterministic invariants do that, and every refusal is written to a
+      tamper-evident ledger beside every action.
+    </p>
+
+    <div class="herobtns">
+      <a class="btn primary" href="#verify">Verify the ledger yourself</a>
+      <a class="btn" href="https://github.com/vighriday/ResilientMesh-Razorpaybuildathon">Source on GitHub</a>
+      <a class="btn" href="#reproduce">Reproduce this run</a>
+    </div>
+
+    <div class="statgrid" id="statgrid"></div>
+
+    <p class="note accent" style="margin-top:32px;max-width:76ch">
+      Every number on this page was read out of a running system's PostgreSQL database
+      during one execution, then exported. Exactly one thing is computed live, in your
+      browser: the audit chain's SHA-256 digests, from the same bytes the ledger hashed.
+      You do not have to take that on trust either. There is a button that plants a forgery.
+    </p>
+  </div>
+</div>
+
+<div id="app"><div class="loading">Loading the exported run</div></div>
+
+<main id="content" hidden>
+
+<!-- ============================================================= honesty == -->
+<section id="honesty" style="padding-top:56px">
+  <div class="wrap">
+    <div class="g2">
+      <div class="card" style="border-color:var(--ok);background:var(--ok-bg)">
+        <h3 style="color:var(--ok)">What is real here</h3>
+        <ul style="margin-top:12px">
+          <li>The system. Embedded PostgreSQL, Redis Streams, the outbox relay, the worker,
+              the gatekeeper and the executor are the production code paths, not a demo build.</li>
+          <li>Every decision, and the rule that permitted or refused it.</li>
+          <li>The audit ledger and its SHA-256 hash chain, which you can re-derive on this page.</li>
+          <li>The LIVE inference calls. This run used a hosted model over the network, at
+              temperature 0, and the tier that answered is recorded on each decision.</li>
+          <li>Every count, amount and timestamp, read out of the running system's own database.</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:var(--warn);background:var(--warn-bg)">
+        <h3 style="color:var(--warn)">What is simulated</h3>
+        <ul style="margin-top:12px">
+          <li><b>The payments.</b> Traffic comes from a Razorpay simulator that serves
+              Razorpay's schemas, signs real HMAC webhooks and emits real decline codes against
+              real Indian issuer codes. No customer, and no rupee, is real.</li>
+          <li><b>Therefore every money figure on this page is simulated money.</b> It is
+              summed honestly from the attempts table of this run, and it measures the
+              policy, not a merchant's actual recovered revenue.</li>
+          <li><b>The clock.</b> Waits before a scheduled retry are compressed so the loop
+              closes while you watch. Regulatory delays are never compressed, and the
+              compression factor is recorded in the ledger.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">
+      This distinction is stated up front rather than in a footnote because a recovery system
+      that overstates its own numbers has failed at the thing it exists to do. The claim being
+      made is about the decision-making, and that part is real.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ position == -->
+<section id="position">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">Problem taste</div>
+      <h2>Razorpay already ships recovery agents. This is not a sixth one.</h2>
+      <p>
+        Agent Studio already has Subscription Recovery, Revenue Drop Detector, Auto-Capture,
+        RTO Shielder and Dispute Auto Responder. Building a seventh variation of those would
+        be building the part that is already solved. The unsolved part is the one that stops
+        any of them from being shipped to a regulated Indian merchant.
+      </p>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <h3>The question a merchant asks</h3>
+        <p>
+          "Your agent retried my customer's mandate. Prove it was allowed to, prove it did
+          not change the amount, and show me the record. The one that would still be
+          trustworthy if someone had database access."
+        </p>
+      </div>
+      <div class="card">
+        <h3>What most builds answer</h3>
+        <p>
+          A log line and a model's rationale. Both are written by the same system that took
+          the action, and neither is evidence: an LLM's explanation is a post-hoc narration,
+          not a cause.
+        </p>
+      </div>
+      <div class="card">
+        <h3>What this answers</h3>
+        <p>
+          The rule that permitted it, by name. The amount, provably carried from the signed
+          webhook and never from the model. And a hash-chained ledger you can verify without
+          trusting the system that wrote it.
+        </p>
+      </div>
+    </div>
+
+    <p class="note">
+      Positioned honestly: ResilientMesh is the layer that makes shipping the first five
+      agents defensible, demonstrated on the hardest case, which is RBI-regulated recurring
+      mandate recovery. There a wrong retry is not a bad outcome. It is a regulatory breach.
+    </p>
+  </div>
+</section>
+
+<!-- ======================================================== architecture == -->
+<section id="architecture">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">Build quality</div>
+      <h2>Where the model is, and where it deliberately is not</h2>
+      <p>
+        The trust boundary is structural rather than procedural. It is enforced by which
+        fields exist on which type, so it cannot be forgotten at a call site.
+      </p>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <h3>Path of one failed payment</h3>
+        <div class="flow" style="margin-top:16px">
+          <div class="flowrow">
+            <div class="node"><b>Signed webhook</b><span>HMAC verified before anything parses it</span></div>
+            <div class="node"><b>Ingest</b><span>incident, outbox row and audit entry in one transaction</span></div>
+          </div>
+          <div class="down">↓</div>
+          <div class="flowrow">
+            <div class="node"><b>Outbox relay</b><span>at-least-once, backs off through an outage</span></div>
+            <div class="node"><b>Redis Streams</b><span>consumer group, dead-letter queue</span></div>
+          </div>
+          <div class="down">↓</div>
+          <div class="flowrow">
+            <div class="node model"><b>Diagnosis</b><span>LIVE, then REPLAY, then HEURISTIC</span></div>
+            <div class="node gate"><b>Gatekeeper</b><span>14 invariants, all deterministic</span></div>
+          </div>
+          <div class="down">↓</div>
+          <div class="flowrow">
+            <div class="node"><b>Executor</b><span>the only component that spends money</span></div>
+            <div class="node"><b>Hash-chained ledger</b><span>actions and refusals alike</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>The trust boundary</h3>
+        <div class="flow" style="margin-top:16px">
+          <div class="node trust">
+            <b>DiagnosticContext, sent to the model</b>
+            <span>Allowlisted and bucketed. No PII, no customer identifier, no exact amount.
+            A success rate arrives as "0 to 20 percent", never as a number.</span>
+          </div>
+          <div class="down">↓</div>
+          <div class="node model">
+            <b>DiagnosticProposal, returned by the model</b>
+            <span>Advisory. It has <em>no amount field at all</em>, not a validated one, no
+            field. Provenance carries <code>json:"-"</code>, so a reply of
+            <code>{"mode":"LIVE"}</code> cannot forge its own tier.</span>
+          </div>
+          <div class="down">↓</div>
+          <div class="node gate">
+            <b>Gatekeeper</b>
+            <span>Fourteen invariants, pure functions of state. It may downgrade or refuse
+            any proposal. It may never upgrade one.</span>
+          </div>
+          <div class="down">↓</div>
+          <div class="node">
+            <b>SanitizedCommand</b>
+            <span>Authoritative. Its amount is copied from the signed payload, which is why
+            the model literally cannot change a sum.</span>
+          </div>
+        </div>
+        <p class="note">
+          Proved by exhaustive model checking rather than by sampling: 510,720 reachable
+          mandate states, 8,390,192 transitions, 0 violations.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================= run == -->
+<section id="run">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">The run</div>
+      <h2>Watch it happen</h2>
+      <p id="run-blurb"></p>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn primary" id="play" type="button">Replay the run</button>
+      <button class="btn" id="skip" type="button">Skip to end</button>
+      <div class="chipset" id="actjump"></div>
+    </div>
+
+    <div class="term">
+      <div class="term-bar">
+        <span class="lights"><i></i><i></i><i></i></span>
+        <span id="term-title"></span>
+      </div>
+      <div class="term-body" id="term"></div>
+    </div>
+
+    <div class="g2" style="margin-top:20px">
+      <div class="card">
+        <h3>How it ran</h3>
+        <dl class="kvlist" id="runmeta" style="margin-top:16px"></dl>
+      </div>
+      <div class="card">
+        <h3>Where it ended up</h3>
+        <div class="tablewrap" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Outcome</th><th style="text-align:right">Count</th></tr></thead>
+            <tbody id="states"></tbody>
+          </table>
+        </div>
+        <p class="note" id="econ"></p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px">The failures that arrived</h3>
+    <div class="tablewrap" style="margin-top:16px;max-height:460px">
+      <table>
+        <thead>
+          <tr><th>Payment</th><th>Rail and issuer</th><th>Decline code</th>
+              <th style="text-align:right">Amount</th><th>State</th></tr>
+        </thead>
+        <tbody id="incidents"></tbody>
+      </table>
+    </div>
+    <p class="note">
+      Real Razorpay decline codes against real Indian issuer codes, generated by a simulator
+      that serves Razorpay's own schemas and signs real HMAC webhooks. Amounts are integer
+      paisa end to end. No float touches a money path anywhere in the system.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================ case == -->
+<section id="case">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">One case, entirely</div>
+      <h2 id="case-title">A single incident, followed the whole way through</h2>
+      <p>
+        A summary can hide a gap between two components. An ordered trail of one incident's
+        own ledger rows cannot. Every row below is a real entry in the hash chain you can
+        verify further down. Expand any of them for the exact bytes that were hashed.
+      </p>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <h3>The payment</h3>
+        <dl class="kvlist" id="case-facts" style="margin-top:16px"></dl>
+        <div id="case-mandate"></div>
+      </div>
+      <div class="card">
+        <h3>What was attempted</h3>
+        <div class="tablewrap" style="margin-top:16px">
+          <table>
+            <thead><tr><th>#</th><th>Action</th><th>Rail</th><th>Outcome</th>
+                       <th style="text-align:right">Fee</th></tr></thead>
+            <tbody id="case-attempts"></tbody>
+          </table>
+        </div>
+        <p class="note" id="case-attempts-note"></p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px">Its ledger trail</h3>
+    <ol class="steps" id="case-timeline" style="margin-top:20px"></ol>
+  </div>
+</section>
+
+<!-- ============================================================ judgment == -->
+<section id="judgment">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">AI judgment</div>
+      <h2>The right tool in the right place, and where a model was refused</h2>
+      <p>
+        Three inference tiers, tried in order, with the tier that answered recorded on every
+        decision. A model that cannot be reached is not an outage. It is a degradation the
+        system is designed for.
+      </p>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <h3><span class="pill accent">Tier 1</span> &nbsp;LIVE</h3>
+        <p>
+          A hosted model, used when evidence genuinely has to be weighed: an ambiguous
+          decline code, an issuer degrading, a downtime notice that may or may not be the
+          cause. Temperature 0, JSON only, hard timeout.
+        </p>
+      </div>
+      <div class="card">
+        <h3><span class="pill accent">Tier 2</span> &nbsp;REPLAY</h3>
+        <p>
+          1,080 digest-keyed cassettes. Identical evidence replays an identical answer, so a
+          reviewer with no API key still sees model-grade decisions and the benchmark stays
+          reproducible.
+        </p>
+      </div>
+      <div class="card">
+        <h3><span class="pill accent">Tier 3</span> &nbsp;HEURISTIC</h3>
+        <p>
+          A deterministic classifier for codes whose cause the taxonomy already states.
+          <code>card_expired</code> does not need a language model, and paying one to say so
+          is a worse engineering decision than a lookup.
+        </p>
+      </div>
+    </div>
+
+    <div class="g2" style="margin-top:20px">
+      <div class="card">
+        <h3>Which tier actually decided, in this run</h3>
+        <div class="tablewrap" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Tier</th><th style="text-align:right">Decisions</th></tr></thead>
+            <tbody id="tiers"></tbody>
+          </table>
+        </div>
+        <p class="note" id="tier-note"></p>
+      </div>
+      <div class="card">
+        <h3>Where a model was deliberately not used</h3>
+        <ul style="margin-top:16px">
+          <li><b>Deciding anything.</b> The gatekeeper is 14 pure functions. A model's output
+              is an input to it, never a substitute for it.</li>
+          <li><b>Money.</b> Amounts are copied from the signed payload. The proposal type has
+              no amount field to carry one.</li>
+          <li><b>Regulatory timing.</b> RBI's cooling window and pre-debit notice are
+              arithmetic on timestamps. A model that is 99 percent right about a legal
+              minimum is 100 percent unusable.</li>
+          <li><b>Retry budgets and backoff.</b> Bounded arithmetic, not judgment.</li>
+          <li><b>The ledger.</b> Written by the code that acted, hashed by a function with no
+              configuration.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== invariants == -->
+<section id="invariants">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">The refusals</div>
+      <h2>Every rule, and what it stopped</h2>
+      <p>
+        Rules that never fired are listed with a zero rather than hidden. A table of only the
+        rules that triggered would let you assume the rest are decorative. The zero is the
+        claim that they were evaluated and had nothing to object to.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Invariant</th><th style="text-align:right">Times it refused</th>
+              <th>What it prevents</th></tr>
+        </thead>
+        <tbody id="invariants-body"></tbody>
+      </table>
+    </div>
+
+    <p class="note">
+      A recovery system that only logs its successes cannot be audited. Every abstention here
+      is a ledger entry naming the invariant that caused it, written with the same care as an
+      action. That is the difference between a system that is careful and a system that says
+      it is.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================== verify == -->
+<section id="verify">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">Do not trust this page</div>
+      <h2>Verify the audit ledger in your own browser</h2>
+      <p id="verify-blurb"></p>
+    </div>
+
+    <div class="card stack-20">
+      <div class="vstatus" id="vstatus"><span>Ready.</span></div>
+      <div class="vbar"><i id="vbar"></i></div>
+
+      <div class="toolbar" style="margin-bottom:0">
+        <button class="btn primary" id="btn-verify" type="button">Verify the chain</button>
+        <button class="btn" id="btn-tamper" type="button">Plant a forgery</button>
+        <button class="btn" id="btn-restore" type="button" disabled>Restore the original</button>
+      </div>
+
+      <div class="hashline" id="hashline"></div>
+
+      <details>
+        <summary style="cursor:pointer;color:var(--ink-3);font-size:.875rem">
+          How the digest is computed, exactly
+        </summary>
+        <p class="note" style="margin-top:16px">
+          Each entry commits to its predecessor. Fields are absorbed
+          <b>length-prefixed</b>, meaning an 8-byte big-endian length and then the bytes,
+          rather than concatenated. Naive concatenation would let an attacker who controls
+          two adjacent fields forge a colliding entry by shifting the boundary between them.
+        </p>
+        <div class="code" style="margin-top:16px">
+<span class="c">// internal/domain/records.go, the Go the ledger actually runs</span>
+h := sha256.<span class="k">New</span>()
+<span class="k">absorbUint</span>(h, uint64(e.Seq))
+<span class="k">absorbStr</span>(h, e.IncidentID)
+<span class="k">absorbStr</span>(h, string(e.Kind))
+<span class="k">absorbStr</span>(h, e.Actor)
+<span class="k">absorb</span>(h, e.Detail)
+<span class="k">absorbUint</span>(h, uint64(e.At.UTC().UnixNano()))
+<span class="k">absorbStr</span>(h, e.PrevHash)</div>
+        <p class="note" style="margin-top:16px">
+          This page reimplements those seven lines against <code>crypto.subtle</code> and runs
+          them over the exported bytes. The detail column travels base64-encoded and is
+          decoded here, so what you see expanded is byte for byte what the digest commits to.
+          A page that displayed a re-serialised copy would be verifying something other than
+          what it showed you.
+        </p>
+      </details>
+    </div>
+
+    <h3 style="margin-top:40px">The chain <span class="pill mute" id="chaincount"></span></h3>
+    <div class="toolbar" style="margin-top:16px">
+      <input id="entryfilter" class="field" type="text"
+             placeholder="Filter by kind, incident id, or sequence number">
+      <span class="pill mute" id="entryshown"></span>
+    </div>
+    <div class="tablewrap" style="max-height:540px">
+      <table>
+        <thead><tr><th>Seq</th><th>Kind</th><th>What it records</th><th>Digest</th></tr></thead>
+        <tbody id="entries"></tbody>
+      </table>
+    </div>
+    <p class="note" id="tamper-note"></p>
+  </div>
+</section>
+
+<!-- =============================================================== broke == -->
+<section id="broke">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">Failure recovery</div>
+      <h2>What broke, and what I did about it</h2>
+      <p>
+        Nine real defects in this codebase, found during this build. None of them were found
+        by reading the code. Each names the technique that caught it, because the technique
+        is the transferable part. The last one is still open.
+      </p>
+    </div>
+
+    <ol class="steps">
+      <li class="good">
+        <div class="st-head"><span class="st-kind">MODEL CHECKING</span>
+          <span class="st-meta">58,512 violations to 0</span></div>
+        <div class="st-body">
+          <b>Two gatekeeper defects that 20,000 property-test cases missed.</b>
+          <code>RBI_AFA_CEILING</code> was specified and never implemented, so a mandate above
+          ₹15,000 would have been retried without a fresh authentication factor. That is a
+          regulatory breach, not a suboptimal choice. <code>EXECUTABLE_NAMES_A_RAIL</code>
+          failed at 29,952 states: the gate emitted an executable command naming no rail. The
+          property corpus could never generate an instrument refresh, so 20,000 draws of the
+          wrong distribution found nothing. Property testing samples. Model checking
+          enumerates.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">CONSUMER REVIEW</span>
+          <span class="st-meta">5 fail-open contracts</span></div>
+        <div class="st-body">
+          <b>Five fail-open defects in my own frozen contracts.</b> The worst:
+          <code>Validate()</code> accepted <code>NaN</code> as a confidence score. Every
+          ordered comparison against NaN is false, so <code>conf &lt; floor</code> waved it
+          straight through and every downstream check read it as <em>maximum</em> confidence.
+          Also a failure class that defaulted to recoverable, and provenance fields a model
+          could set to forge its own tier.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">UNICODE</span>
+          <span class="st-meta">closed sets were not closed</span></div>
+        <div class="st-body">
+          <b>Case folding admitted non-members into every closed set.</b>
+          <code>strings.ToUpper</code> applies <em>Unicode</em> case mapping, and U+017F (ſ)
+          uppercases to a plain ASCII S. So
+          <code>ParseAction("AſYNC_EXPONENTIAL_RETRY")</code> returned a valid action. These
+          parsers sit directly on the model boundary, so a prompt-injected reply could smuggle
+          a fabricated action past the abstention the contract promises. Replaced with
+          ASCII-only folds.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">BOOTING IT</span>
+          <span class="st-meta">12 diagnosed, 1 acted on</span></div>
+        <div class="st-body">
+          <b>The offline path recovered nothing.</b> Every unit test passed and every
+          component was individually correct. Running the whole thing showed twelve incidents
+          diagnosed and one acted on: the deterministic tier had no rule for the soft decline
+          codes, so with no API key, which is every reviewer by design, a recovery system
+          recovered nothing.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">BOOTING IT</span>
+          <span class="st-meta">a comment described a component that did not exist</span></div>
+        <div class="st-body">
+          <b>Deferred recoveries were silently dropped.</b> The worker marked a delayed command
+          SCHEDULED and acknowledged the message. A comment claimed a scheduler would collect
+          it. <b>There was no scheduler.</b> The ledger recorded a correct decision that never
+          happened, and every report looked right. Fixing it exposed a second defect
+          immediately behind it: a swept incident recomputed its backoff and deferred itself
+          forever.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">SIMULATION</span>
+          <span class="st-meta">NO_DOUBLE_PROCESSING</span></div>
+        <div class="st-body">
+          <b>A retried write that double-counted real money.</b> The attempt-commit path is
+          retried on purpose, but the retried block was not idempotent: a failure
+          <em>after</em> <code>RecordAttempt</code> re-ran it and inserted a second row for the
+          same attempt. The table had an index on (incident, attempt) but no uniqueness, so it
+          double-counted a gateway fee and inflated every recovery measurement, in the
+          direction that flatters the system.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">SIMULATION</span>
+          <span class="st-meta">NO_EVENT_LOST, 20,434 rows</span></div>
+        <div class="st-body">
+          <b>A transient broker outage permanently destroyed events.</b> The relay parked a row
+          on its <em>first</em> publish failure, which made the eight-attempt budget
+          unreachable, and the claim itself charged an attempt, so an outage exhausted every
+          budget in the table. The relay's own comment stated the correct principle and the
+          code did the opposite. It now probes the queue and hands the batch back uncharged
+          when the broker is down.
+        </div>
+      </li>
+
+      <li class="good">
+        <div class="st-head"><span class="st-kind">RUNNING IT TWICE</span>
+          <span class="st-meta">found while building this page</span></div>
+        <div class="st-body">
+          <b>The demonstration poisoned its own next run.</b> Act 5 deliberately forges a
+          ledger row and does not repair it, and the next run inherited that forgery through a
+          reused data directory, failing at boot with a chain broken before it had written
+          anything. The fix was to give the demonstration its own database and empty it on
+          every run, which is also what makes "the run is a pure function of its seed" true on
+          the second run instead of only the first. Adding a repair path for one's own audit
+          trail would have been the wrong fix, because a system that can repair its audit trail
+          does not have one.
+        </div>
+      </li>
+
+      <li class="stop">
+        <div class="st-head"><span class="st-kind">OPEN, NOT FIXED</span>
+          <span class="st-meta">reproducible, left failing on purpose</span></div>
+        <div class="st-body">
+          <b>The reconciler amplifies during an outage.</b> A parked outbox row is not
+          <code>PENDING</code>, so the reconciler treats its incident as stalled and inserts a
+          replacement, which parks too. 20,434 rows from 400 incidents, all of it write
+          amplification aimed at a queue that is already down.
+          <b>Two fixes were attempted and both reverted:</b> one traded a loud failure for a
+          silent one, and the other stopped the run draining for reasons I did not fully
+          characterise. A verification harness edited until it agrees with the system is not a
+          harness, and a fix I cannot explain is not a fix. Reproduce it with
+          <code>go run ./cmd/meshsim --seed 20260904 --incidents 400</code>. It is documented
+          rather than hidden.
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- =========================================================== reproduce == -->
+<section id="reproduce">
+  <div class="wrap">
+    <div class="shead">
+      <div class="kicker">Build quality</div>
+      <h2>Run the real thing in about two minutes</h2>
+      <p>
+        One command. No Docker, no cloud account, no payment credentials, no API key. It
+        starts embedded PostgreSQL and a Redis-protocol server inside the process, drives a
+        scripted bank outage through the real system, and narrates what it is doing while
+        every number is read back out of the database.
+      </p>
+    </div>
+
+    <div class="code">
+<span class="c"># Go 1.25 or newer is the only prerequisite.</span>
+<span class="p">$</span> git clone https://github.com/vighriday/ResilientMesh-Razorpaybuildathon
+<span class="p">$</span> cd ResilientMesh-Razorpaybuildathon
+<span class="p">$</span> go run ./cmd/meshdemo
+
+<span class="c"># Optional. Watch the LIVE tier decide instead of the deterministic one.</span>
+<span class="c"># A Groq key is free and needs no card: https://console.groq.com/keys</span>
+<span class="p">$</span> echo <span class="k">"MESH_LLM_PROVIDER=groq"</span>        &gt;&gt; .env
+<span class="p">$</span> echo <span class="k">"MESH_LLM_API_KEY=your_key_here"</span> &gt;&gt; .env
+<span class="p">$</span> go run ./cmd/meshdemo</div>
+
+    <div class="g2" style="margin-top:20px">
+      <div class="card">
+        <h3>Check the claims independently</h3>
+        <div class="code" style="margin-top:16px">
+<span class="p">$</span> go run ./cmd/meshctl selftest   <span class="c"># the same loop as a pass/fail gate</span>
+<span class="p">$</span> go run ./cmd/modelcheck         <span class="c"># 510,720 states, 0 violations</span>
+<span class="p">$</span> go run ./cmd/meshsim --seed 42  <span class="c"># deterministic simulation, fault injection</span>
+<span class="p">$</span> go test ./... -count=1          <span class="c"># the full suite</span>
+<span class="p">$</span> ./scripts/judge.sh              <span class="c"># every gate, with a written report</span></div>
+      </div>
+      <div class="card">
+        <h3>Why this page is static</h3>
+        <p>
+          A hosted demo proves the system runs on someone else's computer. A free Space sleeps
+          after inactivity, so the first click can land on a cold start that reads as broken.
+          And hosting it would put a webhook endpoint and an operations console on the public
+          internet for no evaluative benefit.
+        </p>
+        <p>
+          So the strongest artefact is the command above, running on your machine against your
+          database. This page is the record of it, plus the one thing a static page can
+          genuinely prove: cryptographic verification that needs no server at all.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================== submitter == -->
+<section id="submitter">
+  <div class="wrap">
+    <div class="g2">
+      <div class="card">
+        <h3>Submission</h3>
+        <dl class="kvlist" style="margin-top:16px">
+          <dt>Name</dt><dd>Hriday Vig</dd>
+          <dt>College</dt><dd>Maharaja Surajmal Institute of Technology</dd>
+          <dt>Graduating</dt><dd>2028</dd>
+          <dt>Track</dt><dd>Track 03, AI Revenue Recovery</dd>
+          <dt>Project</dt><dd>ResilientMesh</dd>
+          <dt>Repository</dt>
+          <dd><a href="https://github.com/vighriday/ResilientMesh-Razorpaybuildathon">github.com/vighriday/ResilientMesh-Razorpaybuildathon</a></dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h3>What it solves</h3>
+        <p>
+          Failed payments in India are recovered today by blind retries that burn gateway
+          fees, annoy customers, and on recurring mandates can breach RBI's e-mandate rules.
+          ResilientMesh decides each failure on evidence, refuses the ones no retry can fix,
+          obeys the regulatory constraints as hard invariants rather than as prompt
+          instructions, and leaves a tamper-evident record of every decision including the
+          refusals.
+        </p>
+        <p class="note accent" style="margin-top:20px">
+          The whole argument in one sentence: <b>anyone can make an agent act. The hard part
+          is being able to prove, afterwards, that it was allowed to.</b>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>ResilientMesh</span><span>·</span>
+    <span>Apache-2.0</span><span>·</span>
+    <a href="https://github.com/vighriday/ResilientMesh-Razorpaybuildathon">Source</a><span>·</span>
+    <span id="foot-run"></span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

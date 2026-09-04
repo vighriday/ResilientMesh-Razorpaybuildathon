@@ -1,5 +1,12 @@
 # Evaluating ResilientMesh
 
+> **A published record of one real run** is at
+> <https://huggingface.co/spaces/hriday29/resilientmesh>. It carries the full narration, one
+> incident followed end to end, and all 538 entries of that run's audit ledger. The page
+> re-derives every SHA-256 digest in your browser and lets you plant a forgery in the chain,
+> so the tamper-evidence claim can be checked without running anything at all.
+
+
 For a reviewer with no prior context. Everything below runs on a laptop with no
 Docker, no cloud account, no API key, no payment account, and no network access
 after `go mod download`.
@@ -359,7 +366,7 @@ $env:MESH_LLM_PROVIDER='groq'; $env:MESH_LLM_API_KEY='gsk_your_key_here'
 go run ./cmd/mesh
 ```
 
-The banner will read `Inference  LIVE llama-3.3-70b-versatile, falling back to
+The banner will read `Inference  LIVE openai/gpt-oss-120b, falling back to
 REPLAY then HEURISTIC`, and console rows will show `LIVE` badges.
 
 Google AI Studio, OpenAI and a local Ollama work the same way — set

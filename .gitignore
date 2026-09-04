@@ -42,6 +42,9 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
+# --- Browser automation scratch (screenshots, snapshots, console logs) ---
+.playwright-mcp/
+
 # --- Editors / OS ---
 .vscode/
 .idea/

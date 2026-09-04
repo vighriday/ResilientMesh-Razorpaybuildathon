@@ -254,7 +254,21 @@ func Default() Config {
 type Lookup func(key string) (value string, ok bool)
 
 // Load resolves configuration from the process environment.
-func Load() (Config, error) { return LoadFrom(os.LookupEnv) }
+// Load resolves configuration from the process environment, falling back to a
+// .env file in the working directory for any variable the environment does not
+// set.
+//
+// The file is read because a reviewer following .env.example will put an API
+// key there and expect it to take effect, and a key that is present but ignored
+// is indistinguishable from a key that does not work. Only MESH_-prefixed names
+// are taken from it, and the environment always wins; see DotEnv.
+func Load() (Config, error) {
+	file, err := DotEnv(DotEnvFile)
+	if err != nil {
+		return Config{}, err
+	}
+	return LoadFrom(withDotEnv(os.LookupEnv, file))
+}
 
 // LoadFrom resolves configuration from an arbitrary variable source. All parse
 // failures are collected rather than short-circuited: an operator fixing a bad
@@ -1073,7 +1087,10 @@ func defaultLLMBaseURL(provider string) string {
 func defaultLLMModel(provider string) string {
 	switch provider {
 	case ProviderGroq:
-		return "llama-3.3-70b-versatile"
+		// Groq retired llama-3.3-70b-versatile; a default that 404s reads to a
+		// reviewer as "the live tier does not work" rather than "the default is
+		// stale", so it is pinned to a model the free tier currently serves.
+		return "openai/gpt-oss-120b"
 	case ProviderOpenAI:
 		return "gpt-4o-mini"
 	case ProviderGemini:
