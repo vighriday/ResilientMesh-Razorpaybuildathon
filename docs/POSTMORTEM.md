@@ -563,9 +563,52 @@ worth more than a clean report would have been.
 
 ---
 
+## 18. A test that budgeted in frames for something measured in seconds
+
+**Found by** running the verification harness on a slower configuration.
+
+`TestHandlerServesManyConcurrentStreams` opens sixty-four SSE connections on a thirty
+millisecond heartbeat, publishes one event, and requires every connection to receive it. The
+helper it uses skips heartbeat comments to reach the data frame, and it gave up after
+thirty-two frames.
+
+Under the race detector, six of the sixty-four failed with `no data frame in 32 frames`.
+
+There was no data race, and nothing wrong with the handler. Heartbeats are unbounded in number
+and bounded only in *rate*, so a budget expressed as a frame count is really a bet on how much
+wall clock the test will be given between opening the connections and reading from them. The
+race detector slows execution by roughly an order of magnitude, sixty-four contending streams
+make it worse, and the slowest connections accumulated more than thirty-two comments ahead of
+the event. The helper then reported a perfectly healthy stream as broken.
+
+Raising the constant would have moved the threshold rather than removed it, and left the same
+failure waiting for a slower machine than mine.
+
+**The fix** is a deadline instead of a count, which is the unit the thing being waited for is
+actually measured in. The helper now skips comments until a data frame arrives or ten seconds
+pass, and reports how many non-data frames it consumed so the next failure says what happened.
+
+A second defect was sitting underneath it. The concurrent readers called `t.Fatal` from spawned
+goroutines, which is documented misuse: it exits only the calling goroutine, so one cause
+printed as six identical failures with no indication they were the same event. Those readers now
+return an error and the test goroutine reports it.
+
+**And the harness hid it.** `judge.sh` printed the first fifteen lines of a failing gate's
+output. `go test ./...` lists its passing packages before the failing one, so the excerpt was
+fifteen lines of `ok` with the cause cut off below. The gate said FAIL and showed nothing but
+successes. Failing gates now print the lines that match a failure signature, and the tail.
+
+**What I take from it.** #10 was a flaky race gate caused by a real bug in a test helper. This is
+a flaky race gate caused by a wrong unit in a test helper. Twice now the concurrency gate has
+been the thing that broke, and both times the product was fine. That is not an argument for
+trusting it less. It is an argument for making its failures legible, which is what the harness
+change is for.
+
+---
+
 ## What this list is
 
-Sixteen fixed, one open, and none of them found by reading the code.
+Seventeen fixed, one open, and none of them found by reading the code.
 
 The techniques that found them, in order of how much they were worth:
 
@@ -580,7 +623,7 @@ The techniques that found them, in order of how much they were worth:
 | Disbelieving my own output | #14, an unflattering number produced by a label I invented |
 | Running the same command twice | #8 |
 | Recording expected answers instead of asserting them | #9 |
-| Running the verification harness twice | #10 |
+| Running the verification harness twice | #10 and #18, both of them flaky concurrency gates over correct product code |
 | Believing a failing test over the thing it was testing | #16, a null hypothesis that was not null |
 
 The pattern across all of them is that the defect lived in the space between two

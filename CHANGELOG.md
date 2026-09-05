@@ -4,6 +4,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added, the README checks itself
+- **`cmd/receipts`**, a runner over `docs/receipts.json`: every claim the README makes, with the command that produces it, the value recorded when it was written, and the observation that would falsify it. Exits non-zero if a figure has drifted. Wired into `scripts/judge.sh` and `scripts/judge.ps1` as a gate.
+- **The README restructured around one real payment.** `pay_XD0nBPG9aT3YHf` and its eleven ledger entries are the table of contents, and each mechanism is described at the entry where it actually bit, rather than in a feature tour.
+- Three receipts are marked `browser` and deliberately not automated, because they are claims about what a reader's own machine does with the published artefacts. Each carries the reason in the manifest.
+
+### Fixed, found by the harness on a slower configuration
+- **A test budgeted in frames for something measured in seconds.** The SSE helper skipped heartbeat comments until a fixed count rather than a deadline, so sixty-four concurrent streams under the race detector queued more than thirty-two comments ahead of the event and healthy connections were reported as broken.
+- **`t.Fatal` called from spawned goroutines** in the same test, which exits only the calling goroutine and printed one cause as six failures.
+- **`judge.sh` truncated a failing gate to its first fifteen lines**, which for `go test ./...` is fifteen lines of `ok` with the cause cut off below. Failing gates now print the lines matching a failure signature, and the tail.
+
+### Fixed, found by re-running the README against the code
+- **The tamper demonstration named entry 269**; the published run tampers with entry 556.
+- **The inference-tier split quoted a superseded run.** Every decision in the published run was made by the deterministic tier, and the README now says so.
+- **The veto table came from a different scenario** than the one that ships with the page.
+- **The evidence bundle was described as nine entries proved in 15 kB**; it is eleven entries in 21.5 kB, against a 1,112-entry ledger.
+
 ### Added, the learning layer
 - **Off-policy evaluation** (`internal/ope`), IPS, self-normalised IPS and doubly-robust estimators over logged propensities, with a bias-corrected and accelerated bootstrap interval, overlap diagnostics and effective sample size. Refuses to emit a number when the target policy is unsupported by the log rather than dividing by a small probability.
 - **A contextual bandit** (`internal/bandit`), Thompson sampling over Beta posteriors with an exact logged propensity: the action distribution is materialised before the draw, so the probability is recorded rather than reconstructed. Deterministic given a seed, with a hand-rolled gamma variate whose moments are asserted against the closed form.

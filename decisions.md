@@ -291,3 +291,42 @@ retried, so the stricter guarantee is worth the sensitivity.
 
 **Consequence.** Testing more hypotheses makes each one harder to confirm, so a proposer that
 sprays guesses is actively worse than one that does not. The proposal budget defaults to eight.
+
+---
+
+## ADR-023, the README is executable, and CI runs it
+
+**Decision.** Every figure the README states lives in `docs/receipts.json` alongside the command
+that produces it, the pattern that extracts it, the value recorded when it was written, and the
+observation that would falsify it. `cmd/receipts` re-runs them and diffs. `scripts/judge.sh`
+runs that as a gate, so a drifted number fails the build the way a broken test does.
+
+**Why.** A README is the one artefact in a repository that nothing checks. Numbers are pasted in
+once, the code moves, and the document becomes a description of a program that no longer exists,
+silently, because there is no mechanism by which anyone would find out. Writing this one turned
+up four figures that had already drifted: a tamper demonstration that named entry 269 when the
+published run tampers with 556, an inference-tier split quoting a run that had been replaced, a
+veto table from a different scenario, and an evidence bundle described as nine entries when it
+is eleven. None of those were noticed by reading. All four were caught the first time the
+commands were re-run against the document.
+
+The project's whole argument is that a system acting on money should emit evidence rather than
+assurances. Abandoning that in the file that makes the argument is a poor look, and more to the
+point, a reviewer has no way to distinguish a README whose numbers are current from one whose
+numbers are two months stale.
+
+**Rejected.** Generating the README from the outputs. That produces a document nobody wants to
+read, and it removes the part that does the actual work: writing down what would prove each
+claim false. A generator cannot produce a falsifier, because a falsifier is a judgement about
+what the claim is really asserting.
+
+Also rejected: asserting the browser claims from Go. Three receipts are about what a reader's own
+machine does with the published artefacts. A Go process re-deriving the WebAssembly gatekeeper's
+answers would be the server build agreeing with itself, and re-hashing the ledger with this
+repository's hashing code would be this project agreeing with this project. They are marked
+`browser`, carry the reason in the manifest, and are reported as open rather than omitted.
+
+**Consequence.** Adding a number to the README means adding a receipt, which means deciding what
+would disprove it. `cmd/receipts` refuses a manifest entry with no falsifier for exactly that
+reason. The fast tier costs about sixty seconds and duplicates work `judge.sh` already does; that
+duplication is the price of the document being checked rather than trusted.

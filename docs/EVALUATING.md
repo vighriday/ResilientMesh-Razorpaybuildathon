@@ -298,6 +298,25 @@ go test ./internal/lab/ -run CoverTheTruth -v
 
 Each of these is independent. Run any subset.
 
+### The README's own numbers (~60 seconds)
+
+```bash
+go run ./cmd/receipts                # the fast tier
+go run ./cmd/receipts -tier all      # everything a machine can check
+go run ./cmd/receipts -only R2 -v    # one claim, with the command's full output
+```
+
+Every figure the README states lives in `docs/receipts.json` beside the command that
+produces it, the value recorded when it was written, and the observation that would
+falsify it. This re-runs them and exits non-zero if one has drifted. It is the
+cheapest way to find out whether the document you are reading still describes the
+code in front of you.
+
+Three receipts are marked `browser` and are reported as open rather than passed.
+They are claims about what your own machine does with the published artefacts, and a
+Go process here asserting them would be this repository agreeing with itself. Their
+reasons are in the manifest.
+
 ### The full harness (one command, ~5–15 min)
 
 ```bash
