@@ -7,7 +7,7 @@
 <meta name="description" content="A deterministic control plane for AI-driven payment recovery. Attack its gatekeeper in your browser, then verify the ledger it wrote.">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%232757f0'/><g fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'><path d='M18.4 10.4h1.9a5.6 5.6 0 0 1 0 11.2h-1.9'/><path d='M13.6 21.6h-1.9a5.6 5.6 0 0 1 0-11.2h1.9'/><path d='M11.9 16h8.2'/></g></svg>">
-<link rel="stylesheet" href="style.css?v=c4b9a09363">
+<link rel="stylesheet" href="style.css?v=e4b4da9b91">
 </head>
 <body>
 
@@ -33,6 +33,7 @@
       <a class="navlink" href="#refuse">Refusals</a>
       <a class="navlink" href="#attack">Attack it</a>
       <a class="navlink" href="#verify">Verify it</a>
+      <a class="navlink" href="#learning">Learning</a>
       <a class="navlink" href="#engineering">Engineering</a>
     </nav>
     <button class="iconbtn" id="theme" type="button" aria-label="Switch theme" title="Switch theme">&#9680;</button>
@@ -426,11 +427,104 @@ absorbStr(h, e.PrevHash)</pre>
   </div>
 </section>
 
-<!-- ==================================================== 06 engineering == -->
+<!-- ==================================================== 06 learning ===== -->
+<section class="ch" id="learning">
+  <div class="wrap">
+    <div class="ch-head rise">
+      <span class="ch-num">06 / LEARNING</span>
+      <h2>What a policy we never ran would have earned</h2>
+      <p>
+        A payment fails once. The system takes one action, sees one outcome, and the outcomes
+        of the actions it did not take are gone. That is why every recovery number anyone
+        quotes is unfalsifiable, and why recovery policy stays frozen at whatever backoff rule
+        someone wrote years ago: the only way to find out whether a change helps is to ship it
+        to real customers and watch.
+      </p>
+    </div>
+
+    <div class="g2 mt6">
+      <div class="card rise">
+        <h3>The gate decides what may be explored</h3>
+        <p class="muted">
+          The learner is never shown the whole action space. It sees only the retry delays the
+          gatekeeper has already agreed to, so a recurring debit inside the RBI cooling window
+          has one option, a terminal decline has none, and no amount of exploration can produce
+          an attempt the invariants would have refused.
+        </p>
+        <div class="tbl mt5"><table>
+          <thead><tr><th>Delay</th><th class="r">Incidents where it is allowed</th></tr></thead>
+          <tbody id="lrn-arms"></tbody>
+        </table></div>
+        <p class="aside" id="lrn-gate"></p>
+      </div>
+
+      <div class="card rise">
+        <h3>What each policy actually earns</h3>
+        <p class="muted">
+          Run over the same corpus with the same pre-drawn outcomes, so two policies choosing
+          the same action meet the same luck. This is measured by running them, not estimated.
+        </p>
+        <div class="tbl mt5"><table>
+          <thead><tr><th>Policy</th><th class="r">Recovered</th><th class="r">Net per decision</th></tr></thead>
+          <tbody id="lrn-policies"></tbody>
+        </table></div>
+        <p class="aside" id="lrn-policy-note"></p>
+      </div>
+    </div>
+
+    <div class="card mt6 rise">
+      <h3>The experiment production cannot run</h3>
+      <p class="muted">
+        The estimate below was made from a log alone, with no access to the underlying truth.
+        Only afterwards was the answer key opened. On live traffic that second step does not
+        exist, which is why nobody else can tell you whether their counterfactual was accurate.
+      </p>
+      <div class="cfbar mt5" id="lrn-cf" aria-label="Estimated lift interval against the true lift"></div>
+      <dl class="kv mt5" id="lrn-cfmeta"></dl>
+      <p class="aside" id="lrn-cfnote"></p>
+    </div>
+
+    <div class="card mt6 rise">
+      <h3>The model proposes, the data disposes</h3>
+      <p class="muted">
+        One issuer in this corpus clears its netbanking queue in an overnight settlement batch,
+        so a failure raised late in the evening recovers far better if the retry waits six
+        hours. Nothing was told that. It is not in the features, the prompt, the backoff table
+        or the gate. Every proposal below was scored against data the proposer did not
+        influence, at a confidence widened for the number of things being tested.
+      </p>
+      <dl class="kv mt5" id="lrn-round"></dl>
+      <div class="verdicts mt5" id="lrn-verdicts"></div>
+      <div class="reveal mt5" id="lrn-reveal"></div>
+    </div>
+
+    <div class="card mt6 rise">
+      <h3>And the probabilities the money rests on</h3>
+      <p class="muted">
+        A predicted recovery rate is multiplied by a real amount to decide whether an attempt
+        is worth making, so it has to mean what it says. Every prediction below is out of fold:
+        no attempt was scored by a model that had seen its own outcome.
+      </p>
+      <div class="relgrid mt5">
+        <div class="tbl"><table>
+          <thead><tr><th>Stated</th><th class="r">n</th><th class="r">Claimed</th><th class="r">Observed</th><th class="r">Gap</th></tr></thead>
+          <tbody id="lrn-bins"></tbody>
+        </table></div>
+        <div>
+          <canvas id="lrn-rel" aria-label="Reliability diagram: predicted recovery rate against observed"></canvas>
+          <dl class="kv mt5" id="lrn-calmeta"></dl>
+        </div>
+      </div>
+      <p class="aside" id="lrn-calnote"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ==================================================== 07 engineering == -->
 <section class="ch" id="engineering">
   <div class="wrap">
     <div class="ch-head rise">
-      <span class="ch-num">06 / ENGINEERING</span>
+      <span class="ch-num">07 / ENGINEERING</span>
       <h2>How it is built, and what broke while building it</h2>
       <p>The depth lives here rather than above, so the argument stays readable.</p>
     </div>
@@ -582,6 +676,31 @@ absorbStr(h, e.PrevHash)</pre>
       </div>
 
       <div class="card mt5">
+        <h3>The operator console, and why it is not here</h3>
+        <p>
+          The system has a read-only operations console: live issuer health with
+          circuit-breaker state, the split between inference tiers, and the audit chain with
+          its hashes. It is served by the Go API at <code>/console.html</code> and it needs the
+          running worker, PostgreSQL and a per-run bearer token, so it exists on your machine
+          the moment you run the demo and it cannot exist on a static page.
+        </p>
+        <p>
+          It is shown here rather than omitted, because a screenshot of something you can
+          reproduce in two minutes is more honest than pretending the surface does not exist.
+          Every mutating action lives in <code>meshctl</code> behind an explicit
+          <code>--yes</code>, so the console has nothing to click that could change anything.
+        </p>
+        <figure class="shot mt5">
+          <img src="ops-console.png?v=e4b4da9b91" width="1424" height="985" loading="lazy"
+               alt="The operations console: issuer health with breaker state, incidents with their decline codes and states, the inference tier split, and the audit chain with per-entry hashes">
+          <figcaption>
+            <code>go run ./cmd/meshdemo -keep</code> leaves this up at
+            <code>127.0.0.1:8080</code> and prints the token.
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="card mt5">
         <h3>Why this page is static</h3>
         <p>
           A hosted demo proves the system runs on someone else's computer. A free Space
@@ -634,8 +753,9 @@ absorbStr(h, e.PrevHash)</pre>
 
 </main>
 
-<script src="stage.js?v=c4b9a09363" defer></script>
-<script src="wasm_exec.js?v=c4b9a09363" defer></script>
-<script src="app.js?v=c4b9a09363" defer></script>
+<script src="stage.js?v=e4b4da9b91" defer></script>
+<script src="wasm_exec.js?v=e4b4da9b91" defer></script>
+<script src="app.js?v=e4b4da9b91" defer></script>
+<script src="learn.js?v=e4b4da9b91" defer></script>
 </body>
 </html>

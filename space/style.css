@@ -762,3 +762,121 @@ footer { padding: var(--s-8) 0 var(--s-9); border-top: 1px solid var(--line-2); 
 .cmp .arrow { color: var(--ink-3); font-size: var(--t-13); }
 #atk-out td:first-child { width: 1%; white-space: nowrap; }
 #atk-out td { white-space: normal; }
+
+/* ------------------------------------------------------------ learning ---
+   The learning chapter. Every value it renders comes from learn.json, which is
+   the verbatim output of three meshctl commands, so nothing here encodes a
+   number. These rules only decide how a number is placed. */
+
+.minibar {
+  display: block; height: 6px; min-width: 60px; border-radius: var(--r-full);
+  background: var(--surface-3); overflow: hidden;
+}
+.minibar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+
+/* The counterfactual bar. The claim is geometric, so it is drawn: the band is
+   what the estimator said, the marker is what was true, and a reader should be
+   able to see the second sitting inside the first without reading three
+   numbers out of a table. */
+.cfbar { display: grid; gap: var(--s-4); }
+.cfbar-track {
+  position: relative; height: 46px; border-radius: var(--r-3);
+  border: 1px solid var(--line); background: var(--surface-2);
+}
+.cfbar-band {
+  position: absolute; top: 12px; height: 22px; border-radius: var(--r-2);
+  background: var(--accent-bg); border: 1px solid var(--accent-2);
+}
+.cfbar-point {
+  position: absolute; top: 9px; width: 2px; height: 28px;
+  background: var(--accent); transform: translateX(-1px);
+}
+.cfbar-truth {
+  position: absolute; top: 4px; width: 0; height: 38px;
+  border-left: 2px dashed var(--ok); transform: translateX(-1px);
+}
+.cfbar-truth.out { border-left-color: var(--bad); }
+.cfbar-truth::after {
+  content: ''; position: absolute; left: -4px; top: -4px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+}
+.cfbar-truth.out::after { background: var(--bad); }
+.cfbar-zero {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--ink-3); opacity: .5;
+}
+.cfbar-legend {
+  display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-5);
+  font-size: var(--t-13); color: var(--ink-2);
+}
+.cfleg { display: inline-flex; align-items: center; gap: 7px; }
+.cfleg .sw { width: 14px; height: 8px; border-radius: 2px; flex: none; }
+.cfleg .sw.band { background: var(--accent-bg); border: 1px solid var(--accent-2); }
+.cfleg .sw.point { width: 3px; height: 14px; background: var(--accent); }
+.cfleg .sw.truth { width: 3px; height: 14px; background: var(--ok); }
+.cfleg .sw.truth.out { background: var(--bad); }
+
+/* A verdict, survivors and refutations rendered the same way on purpose. A
+   page that showed only the winners would be indistinguishable from one that
+   had been curated. */
+.verdicts { display: grid; gap: var(--s-3); }
+.verdict {
+  padding: var(--s-4) var(--s-5); border-radius: var(--r-3);
+  border: 1px solid var(--line); background: var(--surface);
+  border-left: 3px solid var(--ink-3);
+}
+.verdict.ok { border-left-color: var(--ok); }
+.verdict.no { opacity: .82; }
+.verdict-head { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; }
+.verdict-head b { font-size: var(--t-15); font-weight: 620; }
+.verdict-why { margin: var(--s-3) 0 0; color: var(--ink-2); font-size: var(--t-14); line-height: 1.55; }
+.verdict-num {
+  margin: var(--s-2) 0 0; font-family: var(--mono);
+  font-size: var(--t-12); color: var(--ink-3);
+}
+.verdict-note { margin: var(--s-2) 0 0; font-size: var(--t-12); color: var(--warn); }
+
+.reveal {
+  padding: var(--s-5); border-radius: var(--r-3);
+  background: var(--accent-bg); border: 1px solid var(--accent-2);
+}
+.reveal-tag {
+  font-family: var(--mono); font-size: var(--t-11); font-weight: 640;
+  text-transform: uppercase; letter-spacing: .09em; color: var(--accent);
+}
+.reveal-rule { margin: var(--s-3) 0 0; font-size: var(--t-15); line-height: 1.6; color: var(--ink); }
+.reveal-note { margin: var(--s-3) 0 0; font-size: var(--t-14); line-height: 1.6; color: var(--ink-2); }
+
+.relgrid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--s-5); }
+#lrn-rel { width: 100%; display: block; }
+td.warn { color: var(--warn); font-weight: 600; }
+th.r, td.r { text-align: right; }
+
+@media (max-width: 880px) {
+  .relgrid { grid-template-columns: 1fr; }
+}
+
+.cfbar-axis { position: absolute; left: 0; right: 0; height: 18px; }
+.cfbar-axis.below { top: 100%; }
+.cfbar-axis.above { bottom: 100%; }
+.cftick {
+  position: absolute; top: 2px; transform: translateX(-50%);
+  font-family: var(--mono); font-size: var(--t-11); color: var(--ink-3); white-space: nowrap;
+}
+.cftick.truth { color: var(--ok); font-weight: 640; }
+.cftick.truth.out { color: var(--bad); }
+.cftick.zero { color: var(--ink-3); opacity: .7; }
+.cfbar-track { margin: 22px 0; }
+.cfbar-legend { margin-bottom: var(--s-2); }
+
+/* A screenshot of a surface that only exists locally. Sized in the markup so it
+   reserves its space before it loads, and lazy because it sits behind a tab
+   most readers never open. */
+.shot { margin: 0; }
+.shot img {
+  display: block; width: 100%; height: auto;
+  border: 1px solid var(--line); border-radius: var(--r-3);
+}
+.shot figcaption {
+  margin-top: var(--s-3); font-size: var(--t-13); color: var(--ink-3);
+}

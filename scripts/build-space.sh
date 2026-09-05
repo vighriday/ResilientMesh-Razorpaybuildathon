@@ -37,7 +37,7 @@ printf 'wasm_exec.js     %s bytes, from %s\n' "$(wc -c < "$exec_js")" "$(go env 
 # revision behind and names a tree that does not hold these bytes. A digest
 # cannot be wrong. Identical assets keep their URL, and a change to any of them
 # produces a new one.
-version=$(cat space/app.js space/stage.js space/style.css space/run.json "$out" |
+version=$(cat space/app.js space/stage.js space/learn.js space/style.css space/run.json space/learn.json "$out" |
   sha256sum | cut -c1-10)
 sed -i -E "s/\?v=[A-Za-z0-9_.-]+/?v=${version}/g" space/index.html
 printf 'stamped space/index.html asset URLs with v=%s (content digest)\n' "$version"
