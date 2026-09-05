@@ -211,6 +211,9 @@ func TestADeterministicLogCannotBeEvaluated(t *testing.T) {
 // differ.
 func TestOffPolicyEstimatesCoverTheTruth(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	const (
 		worlds = 24
 		size   = 40_000
@@ -273,6 +276,9 @@ func TestOffPolicyEstimatesCoverTheTruth(t *testing.T) {
 // was noise. Measured across sizes it covers better at every one of them.
 func TestDoublyRobustLiftCoversBetterThanThePlainDifference(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	const (
 		worlds = 20
 		size   = 20_000
@@ -366,6 +372,9 @@ func TestDoublyRobustLiftCoversBetterThanThePlainDifference(t *testing.T) {
 // difference is visible in the diagnostics rather than hidden in the prose.
 func TestWholesaleReplacementIsCoveredButImprecise(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	const worlds = 30
 
 	target, err := NewSegment(Hypothesis{
@@ -412,6 +421,9 @@ func TestWholesaleReplacementIsCoveredButImprecise(t *testing.T) {
 // bandit was doing anyway.
 func TestABanditLogSupportsACounterfactual(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	w := newWorld(t, 8_000, 21)
 
 	logger := newBandit(t, 4, 0.05, 80)
@@ -455,6 +467,9 @@ func TestABanditLogSupportsACounterfactual(t *testing.T) {
 // opened to see whether the surviving one is the rule that was planted.
 func TestTheLoopDiscoversThePlantedRule(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	w := newWorld(t, 40_000, 31)
 
 	logger := newBandit(t, 9, 0.06, 40)
@@ -563,6 +578,9 @@ func TestTheLoopDiscoversThePlantedRule(t *testing.T) {
 // around it is worth its cost.
 func TestTheBanditBeatsTheBackoffSchedule(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	w := newWorld(t, 30_000, 41)
 
 	base, err := w.Run(Backoff{}, 6)
@@ -626,6 +644,9 @@ func TestTheBanditBeatsTheBackoffSchedule(t *testing.T) {
 // cannot quietly validate an error in the estimator.
 func TestExactValueMatchesALongRun(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip(shortModeNote)
+	}
 	w := newWorld(t, 20_000, 51)
 
 	exact, err := w.ExactValue(Uniform{})
@@ -791,3 +812,25 @@ func TestArmMetadataIsComplete(t *testing.T) {
 		t.Fatal("the issuer list is incomplete")
 	}
 }
+
+// shortModeNote explains why the heaviest tests in this package opt out of
+// short mode, and it is a named constant so the explanation has somewhere to
+// live that a reader will find.
+//
+// These are not unit tests. Each one is a computational experiment: it builds
+// dozens of independent worlds, runs a policy over hundreds of thousands of
+// decisions, and counts how often an interval contained a truth computed in
+// closed form. That is the only way the claims in this package can be checked,
+// and it costs real seconds.
+//
+// The reason they skip under -short specifically is the race detector. The
+// verification harness runs the whole suite under -race, which slows execution
+// by roughly an order of magnitude, and these tests then exceed the test
+// binary timeout and are reported as a failure with a goroutine dump that looks
+// alarming and means nothing. The detector also has nothing to find here: every
+// one of them is single-goroutine arithmetic. The concurrency claims in this
+// project are made by dedicated tests that are cheap to run under -race and do
+// not skip.
+//
+// Run them with: go test ./internal/lab/ -count=1
+const shortModeNote = "statistical experiments are skipped under -short so the race gate stays inside its timeout"

@@ -48,6 +48,13 @@
 // hypotheses under test so the chance of any false survivor stays at the stated
 // level. It is the single most important line in this package and it is one
 // line. See Options.FamilyAlpha.
+//
+// The specificity of that is tested against a world built with the planted
+// effect flattened, so a hypothesis naming it is a claim about something that
+// is not there and has to be refused. Permuting the outcomes of a real world
+// would have been the obvious null and is not one: it removes the covariance
+// the bootstrap resamples while leaving a finite-sample offset in the point
+// estimate, so the interval narrows around a value that did not move.
 package mill
 
 import (

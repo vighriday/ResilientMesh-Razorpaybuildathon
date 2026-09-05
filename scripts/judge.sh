@@ -133,12 +133,24 @@ gate 'Dependency audit' --optional run_vulncheck
 # ---------------------------------------------------------------------------
 section 'Correctness'
 
+# Two passes, because they answer different questions.
+#
+# The race pass runs with -short. The statistical packages hold computational
+# experiments: dozens of independent worlds, hundreds of thousands of decisions
+# each, counting how often an interval contained a truth known in closed form.
+# Under the race detector those run about ten times slower and blow the test
+# binary timeout, and the detector has nothing to find in them because every one
+# is single-goroutine arithmetic. The concurrency claims are made by dedicated
+# tests that are cheap and do not skip.
+#
+# The full pass then runs everything, experiments included, without the detector.
 if [ "$RACE_READY" -eq 1 ]; then
-  gate 'Full test suite under the race detector' go test ./... -race -count=1 -timeout 20m
+  gate 'Test suite under the race detector' go test ./... -race -short -count=1 -timeout 20m
 else
-  gate_skip 'Full test suite under the race detector' "$RACE_REASON"
-  gate 'Full test suite (race detector unavailable)' go test ./... -count=1 -timeout 20m
+  gate_skip 'Test suite under the race detector' "$RACE_REASON"
 fi
+
+gate 'Full test suite, statistical experiments included' go test ./... -count=1 -timeout 25m
 
 gate 'Gatekeeper invariants over 20,000 adversarial inputs' \
   go test ./internal/gatekeeper -run Property -count=1 -v
