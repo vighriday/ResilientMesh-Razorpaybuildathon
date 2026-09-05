@@ -6,25 +6,32 @@
 
 **A failed payment is a decision, not a retry.**
 
-The deterministic control plane that sits between a language model and a merchant's money.
-The model may describe what it thinks went wrong. It may never decide what happens next,
-never name an amount, and never move a rupee. Every action it takes, and every action it
-refuses, comes out as a proof you can check without trusting the system that produced it.
+A recovery system that learns, bounded by rules that were checked exhaustively rather than
+tested, writing down enough at the moment of each decision that anyone can later work out
+what a *different* policy would have earned on the same traffic, without spending a rupee to
+find out.
+
+The model may say what it thinks went wrong and where it thinks the money is hiding. It may
+never decide what happens next, never name an amount, and never move a rupee. Every action it
+takes, and every action it refuses, comes out as a proof you can check without trusting the
+system that produced it.
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Model checked](https://img.shields.io/badge/model%20checked-510%2C720%20states%20·%200%20violations-0f7a52)](#proof-not-assertion)
 [![Invariants](https://img.shields.io/badge/invariants-14%20deterministic-2b5cff)](#the-fourteen-invariants)
+[![Counterfactual](https://img.shields.io/badge/counterfactual-validated%20against%20ground%20truth-8b5cf6)](#learning-and-proving-the-learning-was-real)
 [![Direct dependencies](https://img.shields.io/badge/direct%20dependencies-6-7a8399)](#dependencies)
 
 [![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-lg.svg)](https://huggingface.co/spaces/hriday29/resilientmesh)
 
-### Two ways to evaluate this
+### Four ways to evaluate this
 
 | | | |
 |---|---|---|
 | **Attack it** | **[huggingface.co/spaces/hriday29/resilientmesh](https://huggingface.co/spaces/hriday29/resilientmesh)** | The real gatekeeper, compiled to WebAssembly. Send it proposals no model would produce and watch fourteen invariants refuse them, **in your browser**, with no server involved. |
-| **Verify it** | same page | Re-derives all 594 audit digests, then proves one payment on its own with 8 sibling hashes instead of the whole ledger. Both run on your machine. |
+| **Verify it** | same page | Re-derives every audit digest, then proves one payment on its own with a handful of sibling hashes instead of the whole ledger. Both run on your machine. |
+| **Falsify it** | `go run ./cmd/meshctl learn validate` | Estimates what a policy that was never executed would have earned, from a log alone, then **opens the answer key** and reports whether the interval was right. No database, no key, no network. |
 | **Run it** | `go run ./cmd/meshdemo` | The whole system, two minutes. No Docker, no account, no key. |
 
 [Evaluation guide](docs/EVALUATING.md)
@@ -111,7 +118,8 @@ thing it exists to do.
 | **Every decision**, and the rule that permitted or refused it. | **Therefore every money figure is simulated money.** It is summed honestly from the `attempts` table, and it measures the policy rather than a merchant's actual revenue. |
 | **The audit ledger** and its SHA-256 hash chain. | **The clock.** Waits before a scheduled retry are compressed so the loop closes while you watch. Regulatory delays are never compressed, and the factor is recorded in the ledger. |
 | **The LIVE inference calls**, over the network, at temperature 0. | |
-| **Every count, amount and timestamp**, read from the running system's own database. | |
+| **Every count, amount and timestamp**, read from the running system's own database. | **The world the estimator is scored against.** `meshctl learn` generates a corpus whose latent structure is known, because scoring a counterfactual needs an answer key and production has none. The method and its accuracy are real; the traffic is not. |
+| **The learning**: propensities are committed to the production ledger before each attempt runs, and the worker chooses its delay through the same learner. | |
 
 ---
 
@@ -134,6 +142,155 @@ that took the action, and an LLM's explanation is a post-hoc narration, not a ca
 **ResilientMesh is the layer that makes shipping the first five defensible**, demonstrated on
 the hardest case: RBI-regulated recurring mandate recovery, where a wrong retry is not a bad
 outcome but a regulatory breach.
+
+---
+
+## Learning, and proving the learning was real
+
+A payment fails once. The system takes one action, sees one outcome, and the outcomes of the
+actions it did not take are gone forever.
+
+That is why every recovery number anyone quotes is unfalsifiable. "We recovered 34 percent"
+measures the traffic mix as much as the policy, there is no held-out arm to compare against,
+and the only way to find out whether a change is an improvement is to ship it to real
+customers and watch. For a regulated Indian merchant that is not a trade anybody makes, so
+recovery policy stays frozen at whatever exponential backoff someone wrote years ago.
+
+Three pieces here compose into something none of them is alone.
+
+### 1. A learner, bounded by the invariants
+
+Exponential backoff with jitter is a convention borrowed from network retries. Issuer
+recovery is a hazard function with structure in it, and a doubling rule does not know that.
+[`internal/bandit`](internal/bandit/) holds a Beta posterior over the recovery probability of
+each context and delay and samples from it.
+
+It never sees the whole action space. [`internal/tuner`](internal/tuner/) offers it only the
+delays at or above the ceiling the deterministic policy engine computed, and the gatekeeper
+honours a longer wait while discarding a shorter one. So a recurring debit inside the RBI
+cooling window has exactly one arm, a terminal decline has none, and no amount of exploration
+can produce an attempt the invariants would have refused.
+
+> Safe exploration, where **safe** is a property checked over 510,720 reachable states rather
+> than a hyperparameter somebody tuned.
+
+### 2. The propensity, committed before the outcome exists
+
+Ordinary Thompson sampling draws once per arm and plays the winner, so the probability it
+assigned to what it did is never known. Here the distribution is materialised first and the
+action drawn from it, which makes the logged propensity **exact rather than reconstructed**.
+
+That number is written into the hash-chained ledger as a `POLICY_DECISION` entry *before the
+attempt runs*, and the chain fixes the ordering. This is the load-bearing part. A propensity
+recovered after the results are known can be adjusted until the answer flatters whoever is
+presenting it, and nothing in the numbers reveals it. The ledger is what turns an argument
+into evidence.
+
+The learner then reads its own audit trail to learn: the arm is chosen on the pass that
+schedules a retry and the result arrives hours later on a different redelivery, so rather
+than hold it in memory where a restart loses it, the decision is read back from the entry
+that already had to be written.
+
+### 3. Off-policy evaluation, and the experiment production cannot run
+
+With propensities, [`internal/ope`](internal/ope/) estimates what a *different* policy would
+have earned from the log alone. Inverse propensity scoring, self-normalised IPS, and a
+doubly-robust form backed by a cross-fitted reward model, each with a bias-corrected
+bootstrap interval.
+
+> "Give us last month's logs. We will tell you what this policy would have earned on your
+> traffic, with a confidence interval, without touching a rupee."
+
+The obvious objection is that nobody can check such a claim, because the counterfactual is
+unobservable. That is true in production and it is why every published off-policy result is
+an argument from method rather than a measurement of accuracy.
+
+[`internal/lab`](internal/lab/) removes the objection. It builds a world whose latent
+structure is known, so the exact value of any policy is computable in closed form. The
+estimate is made from the log with no access to that structure, and only afterwards is the
+answer key opened.
+
+<div align="center">
+<img src="docs/img/learn-validate.svg" alt="meshctl learn validate: the gate refuses 12,195 incidents, three policies are run on identical luck, an off-policy estimate is made from the log alone, and only then is the true value revealed inside the interval" width="820">
+</div>
+
+<div align="center">
+<img src="docs/img/space-counterfactual.png" alt="The same result on the evidence page: an estimated interval of 456 to 1221 paisa a decision, with the true lift of 1200 marked inside it" width="900">
+<br><em>The same result on the <a href="https://huggingface.co/spaces/hriday29/resilientmesh">evidence page</a>. The band is what the estimator said from the log; the marker above it is what was actually true.</em>
+</div>
+
+```bash
+go run ./cmd/meshctl learn validate     # about 12 seconds, no database, no key
+```
+
+Read the bottom block last, because that is the order it happens in. The estimate says the
+candidate is worth **890 paisa more per decision, somewhere between 456 and 1,221**. The
+truth, which the estimator never saw, is **1,200**. Inside.
+
+The middle block is a separate claim, measured by running each policy over the same world
+with the same pre-drawn outcomes: the learner recovers **30.9 percent against the fixed
+schedule's 23.8**, and **32 percent more net value**.
+
+### The model gets the job it is actually good at
+
+A bandit optimises inside a feature space a person chose, and that choice goes stale: the
+segment that matters this quarter belongs to a bank that moved its settlement window last
+month. [`internal/mill`](internal/mill/) hands that job to a language model.
+
+It reads aggregated statistics and proposes segments worth testing. It never decides
+anything. Every proposal is a typed segment from a closed grammar, and every one is scored by
+the estimator against data the proposer did not influence.
+
+<div align="center">
+<img src="docs/img/learn-discover.svg" alt="meshctl learn discover: eight hypotheses tested at a widened confidence, three survive and five are refuted, and the planted rule is revealed last" width="880">
+</div>
+
+<div align="center">
+<img src="docs/img/space-discovery.png" alt="Refuted hypotheses shown alongside the survivors, and the planted rule revealed only afterwards" width="900">
+<br><em>Refutations are published beside the survivors. A page showing only the winners would be indistinguishable from one that had been curated.</em>
+</div>
+
+The world contains a rule nobody was told about: one bank clears its netbanking queue in an
+overnight settlement batch, so a failure raised late in the evening recovers at 71 percent if
+the retry waits six hours and 19 percent otherwise. It is in the outcome model and nowhere
+else. Not in the features, the prompt, the backoff table or the gate.
+
+The loop finds it, and **refutes five plausible decoys** on the way.
+
+Testing eight hypotheses at 95 percent confidence produces a false discovery roughly every
+other round, and a system running nightly would assemble a policy made of noise inside a
+month. Every interval is widened to **0.9938** so the chance of *any* false survivor stays at
+5 percent. The specificity is tested against a world built with the effect removed, where a
+hypothesis naming that segment has to be refused, beside the same claim against the same
+world with the effect present.
+
+The prompt contains counts and rates over issuer keys, failure classes, hour blocks and delay
+buckets. No payment, no amount, no customer, no free text that arrived in a webhook. There is
+nothing in that conversation an attacker who controls a payload could have written, and the
+worst a hallucinating model can achieve is to waste one significance test.
+
+**The model proposes, the statistics dispose, the gate constrains, the ledger proves.** With
+no API key the deterministic proposer answers instead, which is both the fallback and the
+control that says how much the model is adding.
+
+### And the number the gate was thresholding on
+
+The gatekeeper refuses any proposal below a confidence floor, and that floor was a number
+someone chose. Every other rule here is derived or exhaustively verified.
+[`internal/calib`](internal/calib/) closes the gap.
+
+<div align="center">
+<img src="docs/img/learn-calibrate.svg" alt="meshctl learn calibrate: a reliability diagram over 53,994 out-of-fold predictions showing the model is well calibrated in aggregate and badly overconfident in its highest bin" width="700">
+</div>
+
+It found a real defect. The recovery model is well calibrated in aggregate, and **badly
+overconfident exactly where it is most confident**: a bin claiming 63 percent delivers 29,
+over 196 attempts. That matters because the number gets multiplied by a real amount to decide
+whether an attempt is worth making. Isotonic regression, cross-fitted so the improvement is
+honest, takes the error from 0.0105 to 0.0008 against a measured noise floor of 0.0035.
+
+It also declines to measure the inference tier, and the reason is worth more than the number
+would have been. See [what broke](#what-broke-and-what-i-did-about-it).
 
 ---
 
@@ -238,6 +395,7 @@ A model is **never** used for:
 | Regulatory timing | RBI's cooling window and pre-debit notice are arithmetic on timestamps. A model that is 99 percent right about a legal minimum is 100 percent unusable. |
 | Retry budgets and backoff | Bounded arithmetic, not judgment. |
 | The ledger | Written by the code that acted, hashed by a function with no configuration. |
+| Whether a proposed policy change is real | The model may say where to look. Whether the effect exists is decided by an estimator against data the model never influenced, at a confidence widened for the number of things being tested. |
 
 ---
 
@@ -402,7 +560,8 @@ The checkout page exists for one reason: in-session rail morphing needs a live s
 move, and a session that only exists in a test is not evidence that the path works.
 
 <div align="center">
-<img src="docs/img/checkout.png" alt="Checkout with a live SSE session" width="560">
+<img src="docs/img/checkout.png" alt="Checkout with a live SSE session, showing the amount, the rail track and the connection state" width="620">
+<br><em>A live session against the running system. The rail track is what a morph moves, and the connection state is the SSE stream that carries it.</em>
 </div>
 
 ---
@@ -444,9 +603,12 @@ from the production path proves nothing about the production path.**
 
 ## What broke, and what I did about it
 
-Eleven real defects, none of them found by reading the code. Full write-ups in
-[docs/POSTMORTEM.md](docs/POSTMORTEM.md). The last one is **still open and left failing on
-purpose**.
+Seventeen real defects, none of them found by reading the code. Full write-ups in
+[docs/POSTMORTEM.md](docs/POSTMORTEM.md). One is **still open and left failing on purpose**.
+
+The six newest all came from the same place: building a world with a known answer and
+counting how often the estimator got it right. Every one of them produced output that looked
+entirely reasonable.
 
 | # | Found by | What it was |
 |---|---|---|
@@ -460,7 +622,13 @@ purpose**.
 | 8 | Running the demo twice | The demonstration poisoned its own next run: act 5 forges a ledger row and does not repair it, and the next run inherited that forgery through a reused data directory. Fixed by giving the demo its own database and emptying it every run. Adding a repair path for one's own audit trail would have been the wrong fix. |
 | 9 | Recorded vectors | A conformance vector used `card_stolen`, which is not in the taxonomy, so it fell through to a generic retry and looked like the gate permitting a stolen card. The code is `card_lost_or_stolen`. The fixture was wrong, not the gate, and it was legible only because the expected answer is recorded from a real run rather than asserted by hand. |
 | 10 | Running the harness twice | The race gate failed once and passed on a re-run, which is worse than failing: a reviewer who hits it thinks the project is broken and one who does not never learns. A real unsynchronised read in a test helper, reading `cap.bodies[0]` without the mutex the handler writes under. Passed in isolation eight times; the detector was right. |
-| 11 | **OPEN** | The reconciler amplifies during an outage: a parked outbox row is not `PENDING`, so the reconciler treats its incident as stalled and inserts a replacement, which parks too. 20,434 rows from 400 incidents. **Two fixes were attempted and both reverted.** One traded a loud failure for a silent one; the other stopped the run draining for reasons I did not fully characterise. A verification harness edited until it agrees with the system is not a harness, and a fix I cannot explain is not a fix. |
+| 11 | Counting coverage against a known answer | The lift estimator self-normalised one side of a difference. SNIPS is the right choice for a level and the wrong one for a difference: it divides the weighted term by the realised weight mass and leaves the subtracted mean undivided, so its bias no longer cancels, and on a small segment that residual is the same size as the effect. Intervals covered the truth about three quarters of the time while looking perfectly respectable. |
+| 12 | Counting coverage against a known answer | The percentile bootstrap misplaced its interval on skewed data. Indian ticket sizes span four orders of magnitude, so a handful of large recoveries make the bootstrap distribution lean hard, and a symmetric percentile interval is put in the wrong *position* rather than merely being the wrong width. Coverage was near half. Fixed with a bias-corrected and accelerated interval, which needed a leave-one-out jackknife and therefore an inverse normal CDF. |
+| 13 | Measuring before concluding | I wrote up "doubly-robust estimation makes this worse" as a finding, on the strength of one run against a small corpus where the reward model had no skill and the residual it subtracted was pure noise. Measured across corpus sizes it covers better at **every** one of them. The estimator was fine; publishing a finding before measuring it across the range was not. The table it should have been checked against is now in the package documentation and in a test. |
+| 14 | Reading my own output sceptically | The calibration command reported the inference tier as wildly overconfident, right 33 percent of the time while claiming 74. The label was mine and it was wrong: a `payment_timed_out` raised during a confirmed issuer outage really is an outage, and the recorded proposals classify it that way about 80 percent of the time. I had scored the model against a ground truth I invented. The command now measures nothing there and explains why, which is worth more than the number would have been. |
+| 15 | A hypothesis that should have survived and did not | Candidate policies were scored against the fixed backoff schedule rather than against the policy that produced the log. A proposal is a *change to what is deployed*, so scoring it any other way measures the difference between two whole policies and drowns the segment in it. A correct hypothesis about a real effect came back confidently negative. |
+| 16 | A test failing, and being right | The null hypothesis in my own multiple-comparison test was not null. Permuting outcomes across a real log removes the covariance between weight and reward, which is the intent, and leaves a finite-sample offset of `(mean(w) - 1) * mean(r)` untouched while narrowing the interval that was resampling that covariance. It admitted three false discoveries in four rounds. The correction was fine; the null was not. Replaced with a world generated with the effect flattened. I nearly weakened the correction to make it pass. |
+| 17 | **OPEN** | The reconciler amplifies during an outage: a parked outbox row is not `PENDING`, so the reconciler treats its incident as stalled and inserts a replacement, which parks too. 20,434 rows from 400 incidents. **Two fixes were attempted and both reverted.** One traded a loud failure for a silent one; the other stopped the run draining for reasons I did not fully characterise. A verification harness edited until it agrees with the system is not a harness, and a fix I cannot explain is not a fix. |
 
 Reproduce the open one:
 
@@ -521,6 +689,15 @@ internal/
   gatewire     the JSON boundary both the browser and the server call
   infra        embedded PostgreSQL and RESP, for managed mode
   simulation   the deterministic simulator and its invariants
+
+  the learning layer
+  bandit       Thompson sampling; the propensity is exact, not estimated
+  tuner        the delay vocabulary, and what the gate leaves to choose from
+  ope          IPS, SNIPS, doubly-robust, and a refusal when overlap fails
+  reward       cross-fitted recovery model behind the doubly-robust term
+  calib        expected calibration error, isotonic repair, the noise floor
+  lab          a world with a known answer, so the estimator can be scored
+  mill         the model proposes segments; the estimator refutes them
 space/         the published evidence page
 docs/          EVALUATING.md, POSTMORTEM.md
 eval/          the four-policy benchmark
@@ -537,7 +714,7 @@ eval/          the four-policy benchmark
 | **Graduating** | 2028 |
 | **Track** | Track 03, AI Revenue Recovery |
 | **Project** | ResilientMesh |
-| **What it solves** | Failed payments in India are recovered today by blind retries that burn gateway fees, annoy customers, and on recurring mandates can breach RBI's e-mandate rules. ResilientMesh decides each failure on evidence, refuses the ones no retry can fix, obeys the regulatory constraints as hard invariants rather than as prompt instructions, and leaves a tamper-evident record of every decision including the refusals. |
+| **What it solves** | Failed payments in India are recovered today by blind retries that burn gateway fees, annoy customers, and on recurring mandates can breach RBI's e-mandate rules. ResilientMesh decides each failure on evidence, refuses the ones no retry can fix, obeys the regulatory constraints as hard invariants rather than as prompt instructions, and leaves a tamper-evident record of every decision including the refusals. It then learns a better schedule inside those constraints, and records enough at each decision that the value of a policy change can be estimated from the log before anyone risks a rupee on it. |
 | **Repository** | https://github.com/vighriday/ResilientMesh-Razorpaybuildathon |
 | **Evidence page** | https://huggingface.co/spaces/hriday29/resilientmesh |
 | **Pitch video** | *(to be added)* |

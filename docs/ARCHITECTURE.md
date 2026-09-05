@@ -174,3 +174,66 @@ Two details carry the weight:
 | `external` | your DSN | your address | Compose, or real infrastructure |
 
 Both modes hand the same DSNs to the same `pgx` and `go-redis` clients. There is exactly one code path, no behaviour exists only in demo mode.
+
+
+---
+
+## 9. The learning layer
+
+Everything above is deliberately fixed. The gatekeeper applies the same invariants forever,
+the policy engine computes the same backoff from the same inputs, and that rigidity is what
+makes the audit trail worth reading. This section is the one place where behaviour changes in
+response to what happened, and it is contained accordingly.
+
+```
+tuner    the delay vocabulary, and which of those delays the gate has already permitted
+bandit   a Beta posterior per (context cell, delay); the propensity is exact, not estimated
+reward   a cross-fitted logistic model of whether an attempt recovers
+ope      IPS, SNIPS and doubly-robust estimators with a bias-corrected bootstrap
+calib    expected calibration error, isotonic repair, and the noise floor beneath both
+mill     a proposer that suggests segments; the estimator decides whether they are real
+lab      a world whose answer is known, so the estimator itself can be scored
+```
+
+### Where it sits in the request path
+
+The learner sits between the advisory proposal and the gate, and it can only make the system
+more patient:
+
+```
+DiagnosticProposal  ->  tuner.Choose  ->  Gatekeeper.Decide  ->  SanitizedCommand
+                          |                                          |
+                          |  arms at or above policy.BackoffCeiling  |
+                          |                                          v
+                          +--------->  POLICY_DECISION  ------>  the ledger
+                                       (propensity, before the attempt runs)
+```
+
+`policy.BackoffCeiling` is deterministic and exported, and the gate draws its own delay from
+below it, so every arm the learner is offered is one the gate will honour exactly. An arm the
+gate then raised anyway, which happens when a later invariant such as the RBI cooling window
+applies, is recorded with `honoured: false` and excluded from evaluation. A propensity
+recorded for an action that was not taken corrupts every estimate made from that log
+afterwards, so the flag is load-bearing rather than diagnostic.
+
+### Why the propensity is in the ledger
+
+Off-policy evaluation needs the probability the deployed policy assigned to the action it
+chose. If that number can be produced after the outcomes are known, it can be adjusted until
+the answer flatters whoever is presenting it, and nothing in the resulting figures reveals
+that it was. Writing it as a `POLICY_DECISION` entry before the attempt runs, in a chain that
+fixes the ordering, is what makes a counterfactual claim checkable rather than merely stated.
+
+### Why the learner reads the ledger back
+
+An arm is chosen on the pass that schedules a retry; the outcome arrives on a later
+redelivery, possibly hours afterwards and certainly in a different process invocation.
+Rather than carry the choice in memory, where a restart loses it, the worker reads it back
+out of the entry that already had to be written. The record is the source of truth for what
+was decided, so the learner and an auditor are looking at the same row.
+
+### Turning the learner off
+
+`MESH_EXPLORE_FLOOR=0` disables it entirely and restores the purely deterministic schedule.
+That is the state to fall back to if the learning layer is ever in doubt, and it is why the
+floor is a configuration value rather than a constant.

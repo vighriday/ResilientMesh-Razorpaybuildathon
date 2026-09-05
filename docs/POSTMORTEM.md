@@ -4,6 +4,13 @@ Every entry here is a real defect in this codebase, found during this build.
 None of them were found by reading the code. Each names the technique that
 caught it, because the technique is the transferable part.
 
+Six of them are statistical, and they are the ones worth reading first. Every
+one produced output that looked entirely reasonable: intervals of a plausible
+width, estimates of a plausible size, a finding with a good mechanism behind it.
+None would have been caught by a test that asserted the code does what the code
+does. They were caught by building a world where the right answer is already
+known and counting how often the machinery got it.
+
 The last entry is **still open**. It is here for the same reason the others are.
 
 ---
@@ -310,7 +317,200 @@ intermittent gate quietly destroys the credibility of every gate beside it.
 
 ---
 
-## 11. OPEN, the reconciler amplifies during an outage
+## 11. A lift estimator that self-normalised one side of a difference
+
+**Found by** counting how often an interval contained a truth I could compute exactly.
+
+Off-policy evaluation has a standard recommendation: prefer the self-normalised estimator to
+the plain one, because it has far lower variance and cannot report a value outside the range
+of rewards that actually occurred. That advice is correct for estimating a *level*, and I
+applied it to a *difference* without thinking about whether it carried over.
+
+It does not. The lift was computed as
+
+```
+SNIPS(target) - mean(observed rewards)
+```
+
+The first term divides the importance-weighted sum by the realised weight mass; the second
+divides by n. The two halves are scaled differently, so the O(1/n) bias of the self-normalised
+term no longer cancels against anything. On a candidate policy that changes one segment, that
+residual is the same size as the effect being measured.
+
+The symptom was an interval that looked entirely respectable and contained the truth about
+three quarters of the time instead of nineteen times in twenty. Nothing about the output
+suggested a problem. It was only visible by running the estimator against a world whose exact
+answer is computable, several dozen times, and counting.
+
+**The fix** is the mean of `(w - 1) * r`, which is unbiased under overlap and, for a candidate
+that changes one segment and matches the deployed policy everywhere else, has a term of
+exactly zero on every decision outside that segment.
+
+**What I take from it.** Statistical advice comes attached to an estimand, and the estimand
+changes when you subtract two things. The general lesson is narrower than "check your
+statistics": it is that a variance-reduction technique which is a *ratio* stops composing the
+moment you put it inside a *difference*.
+
+---
+
+## 12. A percentile bootstrap that put the interval in the wrong place
+
+**Found by** the same coverage count, after fixing the estimator above.
+
+Coverage improved and was still wrong. The interval was the 2.5th and 97.5th percentiles of
+the bootstrap distribution, which is the textbook percentile interval and is correct
+asymptotically.
+
+Indian ticket sizes in this corpus span four orders of magnitude, from a fifty rupee top-up to
+a fifty thousand rupee premium. A handful of large recoveries carry most of the signal in any
+one segment, so the bootstrap distribution leans hard. A percentile interval is symmetric in
+that distribution and takes no view on whether it is centred on the estimate, so the interval
+is placed in the wrong *position* rather than merely being the wrong width. Coverage was near
+one half at small segment sizes.
+
+**The fix** is the bias-corrected and accelerated interval. It shifts the two percentiles by
+two quantities read off the data: how much of the bootstrap distribution sits below the point
+estimate, which measures median bias, and how quickly the variance changes as observations are
+dropped, which measures skew. That second term needs a leave-one-out jackknife, which needed
+an inverse normal CDF, neither of which the standard library has.
+
+Both were affordable because every estimator in the package is a ratio of sums, so a
+leave-one-out value costs a subtraction rather than a re-run.
+
+**What I take from it.** "Correct asymptotically" is a statement about a limit, and a segment
+of a few hundred decisions is not near it. The measurement that caught this is now a test.
+
+---
+
+## 13. Publishing a finding before measuring it across the range
+
+**Found by** measuring properly after I had already written the conclusion down.
+
+Doubly-robust estimation is the standard recommendation for reducing the variance of an
+off-policy estimate. I ran it once, on a small corpus, and it was worse: wider intervals and
+poorer coverage than the plain difference. I had an explanation ready and it was a good one.
+A recovery reward is a rare large payout against a small fixed fee, so most attempts are worth
+exactly minus one gateway charge, while the model residual is roughly the ticket size times a
+prediction error on *every* decision including the cheap failures. Subtracting a baseline
+converts a mostly-tiny quantity into a mostly-large one.
+
+I wrote that up as a finding, in the package documentation, with a test pinning it.
+
+Then I measured it across corpus sizes:
+
+```
+corpus   IPS coverage  IPS width   DR coverage  DR width   model skill
+ 6,000        70%         2021         85%        2094        0.028
+20,000        80%         2067         90%        1659        0.058
+40,000        95%         1441         95%        1132        0.066
+```
+
+Doubly-robust covers better at every size and is narrower once the model has enough data to
+have any skill at all. The single run I generalised from was one where the reward model had a
+skill of 0.028, so the residual it subtracted was almost pure noise. The estimator was fine;
+the reasoning was fine as far as it went; the mistake was concluding from one point.
+
+**The fix** is that doubly-robust is now the default whenever an outcome model is supplied,
+the table above is in the package documentation, and a test regenerates it so the claim cannot
+quietly stop being true.
+
+**What I take from it.** A plausible mechanism is not evidence, and it is more dangerous than
+no explanation at all, because a good story makes a single measurement feel like a
+confirmation.
+
+---
+
+## 14. Reporting my own model as badly overconfident, on a label I invented
+
+**Found by** reading my own output and not believing it.
+
+The calibration command measured the inference tier as wildly overconfident: right 33 percent
+of the time while claiming 74, an expected calibration error of 0.41 against a noise floor of
+0.05. It was a striking number and it went straight into a draft.
+
+The label was mine. I had picked the decline codes whose causal class looked fixed by the code
+itself, and two of them are not. A `payment_timed_out` raised in the middle of a confirmed
+issuer outage really is an issuer outage rather than a network timeout, and the recorded
+proposals classify it that way about eighty percent of the time. `issuer_down` has the same
+problem in the other direction, because the corpus deliberately varies the telemetry behind it.
+
+I was scoring the model against a ground truth I had made up, and it was losing.
+
+**The fix** is that the command measures nothing there and explains why. The recorded corpus
+was assembled to exercise *ambiguous* failures, so it cannot supply the ground truth a
+calibration study needs. The two remaining options were to invent a label or to score the
+model against this system's own heuristic, and a measurement built on either is worth less
+than the admission.
+
+The command does calibrate the learned recovery model, where the outcome is observed and the
+ground truth is not a matter of opinion, and it finds a real defect there.
+
+**What I take from it.** The most dangerous number is the one that confirms something
+unflattering, because scepticism runs out exactly when a result is interesting.
+
+---
+
+## 15. Scoring a proposal against the wrong baseline
+
+**Found by** a hypothesis that was correct and came back confidently negative.
+
+The discovery loop tests proposed segments by constructing the policy each one implies and
+estimating its value. I built that policy as "the proposed action inside the segment, the fixed
+backoff schedule everywhere else", and scored it against the log.
+
+A hypothesis is a proposed *change to what is deployed*. Building it on the backoff schedule
+made every candidate a wholesale policy replacement that also happened to contain the segment,
+so the estimate measured the difference between two entirely different policies across the
+whole corpus, and the segment was a rounding error inside it. The correct hypothesis about a
+real 52-point effect came back at `[-20594, -5254]`.
+
+**The fix** is that a nil base means the policy that produced the log, replayed. Outside the
+segment the candidate and the log agree exactly, the importance weight is one, and the
+estimator reads only the decisions the change actually touches.
+
+**What I take from it.** An estimator answers the question it was asked. This one was answering
+a question I had not meant to ask, and it was answering it correctly.
+
+---
+
+## 16. A null hypothesis test whose null was not null
+
+**Found by** the test failing, and the failure being right.
+
+The discovery loop widens every interval by the number of hypotheses under test, so I wanted
+a test proving the correction does something: build a null where there is nothing to find, run
+a round, and require it to find nothing.
+
+The null I reached for was a permutation. Take a real log, shuffle the outcomes across its
+entries, and the association between an action and its result is destroyed while the corpus,
+the action distribution and every propensity stay exactly as they were. It is the standard
+construction and it reads as obviously correct.
+
+It admitted three false discoveries in four rounds.
+
+The correction was fine. The null was not. The lift is the mean of `(w - 1) * r`, whose
+expectation decomposes into the covariance of the weight with the reward plus
+`(mean(w) - 1) * mean(r)`. Permuting removes the covariance, which is the intent, and leaves
+the second term untouched. That term is a small finite-sample deviation of the mean weight
+multiplied by a mean reward that is large, because a recovery is a rare payout of a whole
+ticket. Worse, removing the covariance is exactly what the bootstrap was resampling, so the
+interval narrows around a point estimate that did not move.
+
+A permutation is only a null if the estimator is invariant to it, and this one is not.
+
+**The fix** is a null that is actually null: a world generated with the planted effect
+flattened, so the segment recovers at the same rate on every delay and nothing else changes.
+A hypothesis naming it is then a claim about something that is not there, and it is refused.
+Beside it sits the same claim against the same world with the effect present, so the test is
+known to be capable of the other answer, and a third test asserting that the corrected
+interval is strictly wider than the naive one.
+
+**What I take from it.** A test that fails is evidence about something, and the something is
+not always the code under test. I nearly weakened the correction to make this pass.
+
+---
+
+## 17. OPEN, the reconciler amplifies during an outage
 
 **Status: unfixed. Reproducible. Left failing on purpose.**
 
@@ -365,19 +565,23 @@ worth more than a clean report would have been.
 
 ## What this list is
 
-Ten fixed, one open, and none of them found by reading the code.
+Sixteen fixed, one open, and none of them found by reading the code.
 
 The techniques that found them, in order of how much they were worth:
 
 | Technique | Found |
 |---|---|
 | Exhaustive model checking | #1, two defects a 20,000-case property suite could not reach |
+| Building a world with a known answer and counting | #11, #12 and #15, three defects in statistics that produced entirely reasonable-looking output |
 | Deterministic simulation with fault injection | #6 and #7, both of which need a fault to land at one specific step |
 | Booting the whole system and looking at it | #4 and #5, gaps *between* components that no unit test can see |
 | Writing adversarial tests for a frozen contract | #2 and #3, hostile values the definition never considered |
+| Measuring across a range instead of at a point | #13, a conclusion I had already written up |
+| Disbelieving my own output | #14, an unflattering number produced by a label I invented |
 | Running the same command twice | #8 |
 | Recording expected answers instead of asserting them | #9 |
 | Running the verification harness twice | #10 |
+| Believing a failing test over the thing it was testing | #16, a null hypothesis that was not null |
 
 The pattern across all of them is that the defect lived in the space between two
 individually correct things: a relay that gives up and a reconciler that revives,

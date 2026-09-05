@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="937" height="1244" viewBox="0 0 937 1244" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">
+<rect width="937" height="1244" rx="10" fill="#0a0e1a"/>
+<rect x="0.5" y="0.5" width="936" height="1243" rx="10" fill="none" stroke="#1e2942"/>
+<rect x="1" y="1" width="935" height="38" rx="9" fill="#111725"/>
+<rect x="1" y="30" width="935" height="10" fill="#111725"/>
+<line x1="1" y1="39.5" x2="936" y2="39.5" stroke="#1e2942"/>
+<circle cx="22" cy="20" r="5" fill="#e05a5a" opacity="0.55"/>
+<circle cx="39" cy="20" r="5" fill="#e8b04b" opacity="0.55"/>
+<circle cx="56" cy="20" r="5" fill="#3fb984" opacity="0.55"/>
+<text x="468.5" y="25" fill="#6b7a99" font-size="12.5" text-anchor="middle">meshctl learn discover</text>
+<text x="26" y="62.0" fill="#ffffff" font-size="13" font-weight="600" xml:space="preserve">discovery round  120000 incidents, 107805 logged decisions</text>
+<text x="26" y="102.0" fill="#5b8cff" font-size="13" xml:space="preserve">  proposer                  heuristic</text>
+<text x="26" y="122.0" fill="#5b8cff" font-size="13" xml:space="preserve">  hypotheses tested         8</text>
+<text x="26" y="142.0" fill="#5b8cff" font-size="13" xml:space="preserve">  confidence per test       0.9938  (widened from 0.95 so the chance of any</text>
+<text x="26" y="162.0" fill="#c8d3e8" font-size="13" xml:space="preserve">                            false survivor across the round stays at 0.05)</text>
+<text x="26" y="202.0" fill="#5b8cff" font-size="13" xml:space="preserve">  verdicts, survivors first</text>
+<text x="26" y="242.0" fill="#3fb984" font-size="13" font-weight="600" xml:space="preserve">  [SURVIVED]  ISSUER_OUTAGE retried after 6 hours</text>
+<text x="26" y="262.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              ISSUER_OUTAGE failures recover at 52% on a 6 hours wait against</text>
+<text x="26" y="282.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              41% for the class overall</text>
+<text x="26" y="302.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 26220 decisions; lift 3931.4 [2720.2, 5294.4] paisa a decision, 16164 inside the segment</text>
+<text x="26" y="342.0" fill="#3fb984" font-size="13" font-weight="600" xml:space="preserve">  [SURVIVED]  netbanking:SBI 21:00-24:00 retried after 6 hours</text>
+<text x="26" y="362.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              netbanking:SBI between 21:00 and 24:00 recovers at 52% on a 6</text>
+<text x="26" y="382.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 31% overall in that window</text>
+<text x="26" y="402.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 2312 decisions; lift 337.8 [70.3, 599.5] paisa a decision, 15753 inside the segment</text>
+<text x="26" y="442.0" fill="#3fb984" font-size="13" font-weight="600" xml:space="preserve">  [SURVIVED]  TRANSIENT_ISSUER_DEGRADATION retried after 2 hours</text>
+<text x="26" y="462.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              TRANSIENT_ISSUER_DEGRADATION failures recover at 35% on a 2 hours</text>
+<text x="26" y="482.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              wait against 26% for the class overall</text>
+<text x="26" y="502.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 36246 decisions; lift 2939.9 [828.9, 5254.2] paisa a decision, 8744 inside the segment</text>
+<text x="26" y="542.0" fill="#6b7a99" font-size="13" xml:space="preserve">  [refuted ]  upi:okhdfcbank 00:00-03:00 retried after 6 hours</text>
+<text x="26" y="562.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              upi:okhdfcbank between 00:00 and 03:00 recovers at 50% on a 6</text>
+<text x="26" y="582.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 39% overall in that window</text>
+<text x="26" y="602.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 3432 decisions; lift 656.2 [-71.4, 1737.6] paisa a decision, 20611 inside the segment</text>
+<text x="26" y="642.0" fill="#6b7a99" font-size="13" xml:space="preserve">  [refuted ]  upi:okhdfcbank 18:00-21:00 retried after 6 hours</text>
+<text x="26" y="662.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              upi:okhdfcbank between 18:00 and 21:00 recovers at 53% on a 6</text>
+<text x="26" y="682.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 40% overall in that window</text>
+<text x="26" y="702.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 3534 decisions; lift -127.8 [-688.3, 421.2] paisa a decision, -3898 inside the segment</text>
+<text x="26" y="742.0" fill="#6b7a99" font-size="13" xml:space="preserve">  [refuted ]  upi:okhdfcbank 09:00-12:00 retried after 6 hours</text>
+<text x="26" y="762.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              upi:okhdfcbank between 09:00 and 12:00 recovers at 54% on a 6</text>
+<text x="26" y="782.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 41% overall in that window</text>
+<text x="26" y="802.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 3500 decisions; lift -224.6 [-1094.5, 454.7] paisa a decision, -6919 inside the segment</text>
+<text x="26" y="842.0" fill="#6b7a99" font-size="13" xml:space="preserve">  [refuted ]  upi:okhdfcbank 03:00-06:00 retried after 6 hours</text>
+<text x="26" y="862.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              upi:okhdfcbank between 03:00 and 06:00 recovers at 53% on a 6</text>
+<text x="26" y="882.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 40% overall in that window</text>
+<text x="26" y="902.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 3523 decisions; lift -753.9 [-1931.8, -23.1] paisa a decision, -23070 inside the segment</text>
+<text x="26" y="942.0" fill="#6b7a99" font-size="13" xml:space="preserve">  [refuted ]  upi:okhdfcbank 12:00-15:00 retried after 6 hours</text>
+<text x="26" y="962.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              upi:okhdfcbank between 12:00 and 15:00 recovers at 52% on a 6</text>
+<text x="26" y="982.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              hours wait against 40% overall in that window</text>
+<text x="26" y="1002.0" fill="#c8d3e8" font-size="13" xml:space="preserve">              covers 3460 decisions; lift -1302.6 [-3061.9, -96.3] paisa a decision, -40586 inside the segment</text>
+<text x="26" y="1042.0" fill="#5b8cff" font-size="13" font-weight="600" xml:space="preserve">  the answer key, opened only now</text>
+<text x="26" y="1062.0" fill="#c8d3e8" font-size="13" xml:space="preserve">    netbanking:SBI failures raised between 21:00 and midnight IST recover</text>
+<text x="26" y="1082.0" fill="#c8d3e8" font-size="13" xml:space="preserve">    at 71% when the retry waits six hours, against 19% on every other</text>
+<text x="26" y="1102.0" fill="#c8d3e8" font-size="13" xml:space="preserve">    delay, because the issuer clears its queue in an overnight settlement</text>
+<text x="26" y="1122.0" fill="#c8d3e8" font-size="13" xml:space="preserve">    batch</text>
+<text x="26" y="1162.0" fill="#5b8cff" font-size="13" font-weight="600" xml:space="preserve">  Found. Nothing in the policy, the features, the prompt or the gate</text>
+<text x="26" y="1182.0" fill="#5b8cff" font-size="13" xml:space="preserve">  named that rule. It was proposed from the log and confirmed against</text>
+<text x="26" y="1202.0" fill="#5b8cff" font-size="13" xml:space="preserve">  data the proposer did not influence.</text>
+</svg>

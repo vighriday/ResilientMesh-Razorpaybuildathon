@@ -80,3 +80,29 @@ Retention is enforced by a scheduled prune that deletes only from tables where d
 - **RBI e-mandate rules** are enforced as invariants: the 24-hour cooling window, the pre-debit notification, and the per-cycle attempt cap are deterministic checks against durable timestamps, never inferred and never model-decided.
 - **PCI DSS** is out of scope by design, and staying out of scope is an architectural constraint rather than an accident.
 - **Data minimisation.** Every stored field traces to a specific decision or obligation. The raw webhook body is the one deliberately generous retention, and it exists because it is the evidence underpinning the amount-immutability guarantee.
+
+
+---
+
+## `space/learn.json`
+
+The published page renders a learning chapter from this file. It is the verbatim JSON output
+of three commands, concatenated under one envelope:
+
+```bash
+go run ./cmd/meshctl --json learn validate
+go run ./cmd/meshctl --json learn discover
+go run ./cmd/meshctl --json learn calibrate
+```
+
+Schema `resilientmesh.learn.v1`, with three top-level keys matching the three commands.
+
+Nothing in it is written by hand and nothing on the page is computed from anything else, so a
+figure shown there can be reproduced by running the command and comparing. The corpus behind
+it is generated rather than recorded: scoring a counterfactual needs an answer key, and
+production has none. The seed is fixed at 20260301, so two runs produce identical output.
+
+Every number is per-decision paisa unless its key says otherwise. The intervals carry their
+own confidence level, because the discovery round widens it by the number of hypotheses under
+test and a reader comparing two intervals needs to know they were computed at different
+levels.

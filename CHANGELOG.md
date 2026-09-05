@@ -4,6 +4,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
+### Added, the learning layer
+- **Off-policy evaluation** (`internal/ope`), IPS, self-normalised IPS and doubly-robust estimators over logged propensities, with a bias-corrected and accelerated bootstrap interval, overlap diagnostics and effective sample size. Refuses to emit a number when the target policy is unsupported by the log rather than dividing by a small probability.
+- **A contextual bandit** (`internal/bandit`), Thompson sampling over Beta posteriors with an exact logged propensity: the action distribution is materialised before the draw, so the probability is recorded rather than reconstructed. Deterministic given a seed, with a hand-rolled gamma variate whose moments are asserted against the closed form.
+- **Production wiring** (`internal/tuner`), the delay vocabulary and the rule mapping a gate floor onto a permitted arm set. The worker chooses its retry delay through it and writes a `POLICY_DECISION` ledger entry, carrying the propensity, before the attempt runs.
+- **A cross-fitted recovery model** (`internal/reward`), logistic regression over hashed features trained with AdaGrad, reporting held-out log loss, skill against the base rate, AUC and Brier score. Cross-fitting is enforced rather than optional, with a test that requires zero held-out skill on pure noise.
+- **Calibration** (`internal/calib`), expected calibration error, the Murphy decomposition, isotonic repair by pool-adjacent-violators, and a parametric-bootstrap noise floor so a small-sample artefact is not reported as a defect. Includes a threshold sweep that turns a chosen confidence constant into a measured trade against coverage.
+- **A world with a known answer** (`internal/lab`), a generated recovery corpus whose latent structure is computable in closed form, gated by the real `internal/gatekeeper`, so an off-policy estimate can be scored against the truth it was trying to recover.
+- **A proposer** (`internal/mill`), a language model reading aggregate statistics and suggesting typed segments, every one scored by the estimator at a confidence widened for the number of tests. Specificity is tested against a world with the planted effect flattened, where the same hypothesis must be refused.
+- **`meshctl learn validate | discover | calibrate`**, three commands that need no database, queue, credential or network.
+- **A learning chapter on the published page**, rendered entirely from `space/learn.json`, which is the verbatim JSON output of those three commands.
+- `MESH_EXPLORE_FLOOR`, the share of decisions spent keeping the log evaluable. Zero disables the learner and restores the deterministic schedule.
+
+### Fixed, found by measuring rather than by reading
+- **The lift estimator self-normalised one side of a difference**, so the bias of the self-normalised term no longer cancelled and interval coverage sat near three quarters instead of nineteen twentieths.
+- **The percentile bootstrap misplaced its interval on skewed data**, replaced with a bias-corrected and accelerated interval.
+- **Isotonic regression did not pool tied confidences**, so a run of equal values survived as several blocks and a lookup read back the wrong one. It presented as a calibrator confidently wrong by exactly one bin.
+- **Candidate policies were scored against the fixed schedule** rather than against the policy that produced the log, which drowned every segment-level effect in a whole-corpus difference.
+- **A doubly-robust finding was published from a single small-corpus run** and reversed by measuring across sizes.
+
 ### Added
 - **Frozen domain contracts** (`internal/domain`), Razorpay wire types, the failure taxonomy, the rail model, the probabilistic/deterministic trust boundary (`DiagnosticContext` → `DiagnosticProposal` → `SanitizedCommand`), persistence records, the hash-chained audit entry, the shared cost model, and every cross-package port. No I/O, no internal imports, acyclic by construction.
 - **Length-prefixed audit hashing**, `AuditEntry.ComputeHash` absorbs each field with an explicit length prefix rather than concatenating, closing the boundary-shifting forgery that naive concatenation allows.

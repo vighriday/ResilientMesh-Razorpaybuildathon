@@ -185,3 +185,109 @@ Every entry records a decision that was not obvious, the alternatives that were 
 **Why.** A public repository is the deliverable. Anything published is published permanently, and secret material or internal planning in a payments repository is both an embarrassment and, for real credentials, an incident. A `.gitignore` alone is a convention; a scanner that fails the build is a control.
 
 **Consequence.** Internal documents are not available to readers of the repository. Intentional.
+
+---
+
+## ADR-018, the learner may only make the system more patient
+
+**Decision.** The Thompson sampler chooses a retry delay from the arms at or above
+`policy.BackoffCeiling`, and never below it. The gatekeeper is not modified to accommodate it.
+
+**Why.** The gate already honours a proposed delay longer than its own and discards a shorter
+one, because only the aggressive direction spends money and trips issuer abuse heuristics.
+That asymmetry was written for a language model and it happens to be exactly the boundary a
+learner needs, so exploration is bounded by a property already checked over 510,720 reachable
+states rather than by a new mechanism nobody has verified.
+
+**Rejected.** Giving the learner the full action space and clamping afterwards. The clamp
+would be invisible in the log: the system would record having chosen an arm it did not take,
+and every off-policy estimate made from that log afterwards would rest on a propensity for an
+action that never happened.
+
+**Consequence.** A recurring debit inside the RBI cooling window has one arm and a terminal
+decline has none, so there are incidents on which the learner contributes nothing. That is the
+correct outcome and it is measured: `learn validate` reports how many incidents each arm was
+available on.
+
+---
+
+## ADR-019, the exploration floor is a cost we pay on purpose
+
+**Decision.** The action distribution keeps a floor of probability, two percent by default, on
+every permitted arm, configurable through `MESH_EXPLORE_FLOOR` and disabled at zero.
+
+**Why.** A policy that collapses onto its current best action produces a log with no
+information about anything else. Tomorrow's candidate policy is then unmeasurable and has to
+be tested on live customers to be evaluated at all. The floor buys the ability to answer
+questions that have not been asked yet, and it is the only line item in this system whose
+benefit is entirely in the future.
+
+**Rejected.** Decaying the floor to zero as confidence grows. It is the standard move and it
+optimises for a world that stops changing. An issuer that moves its settlement window makes a
+converged policy wrong, and a converged log cannot detect that it has become wrong.
+
+**Consequence.** A few percent of recoveries are spent on actions the model does not currently
+favour. `learn validate` prints the exploration rate so the cost is visible rather than
+implied.
+
+---
+
+## ADR-020, the propensity goes in the ledger, not in a metrics store
+
+**Decision.** Each scheduling decision is written as a `POLICY_DECISION` audit entry carrying
+the probability the chosen arm was drawn with, before the attempt runs.
+
+**Why.** Off-policy evaluation is only trustworthy if the propensities were fixed before the
+outcomes were known. A propensity in a metrics store can be recomputed, backfilled or
+corrected, and none of those leave a trace. In a hash chain the ordering is fixed and an edit
+invalidates every entry after it, so the claim that these probabilities were not chosen to
+suit the answer becomes checkable by someone who does not trust us.
+
+**Rejected.** A separate propensity table. Cheaper to query and worth nothing to a sceptic.
+
+**Consequence.** The ledger grows by one entry per scheduled retry, and the worker reads the
+chain back to learn from an outcome that arrives hours later. That read is the same row an
+auditor would look at, which is a property worth having rather than an inconvenience.
+
+---
+
+## ADR-021, the model proposes segments; it never decides whether they are real
+
+**Decision.** `internal/mill` sends aggregate statistics to a language model and accepts a
+typed hypothesis from a closed grammar. Whether the hypothesis is true is decided by an
+off-policy estimator against data the model did not influence, at a confidence widened for the
+number of hypotheses in the round.
+
+**Why.** Reading a large boring log and noticing that one slice behaves differently is the
+thing language models are genuinely good at and that no other component here can do. Deciding
+whether a difference is real is the thing they are worst at, because a confident assertion and
+a correct one are indistinguishable in their output.
+
+**Rejected.** Letting the model rank or score its own proposals. That is the failure mode that
+makes language models unusable for analysis, and it would have made the whole loop a
+sophisticated way of agreeing with a model.
+
+**Consequence.** Most proposals are refuted, and the refutations are published. A round that
+found nothing is a legitimate outcome rather than a failure to report.
+
+---
+
+## ADR-022, family-wise error control, not per-test confidence
+
+**Decision.** A discovery round testing k hypotheses computes every interval at 1 - alpha/k
+rather than at 1 - alpha.
+
+**Why.** Eight tests at 95 percent produce a false discovery roughly every other round. A
+system running nightly would accumulate a recovery policy made of noise inside a month, and
+every individual step would have looked statistically respectable. Bonferroni is conservative
+and assumption-free, and correlation between the tests can only make it more conservative
+rather than less.
+
+**Rejected.** Benjamini-Hochberg, which is less conservative and controls the false discovery
+rate rather than the family-wise error rate. Controlling the expected proportion of false
+survivors is the right choice when hundreds of hypotheses are screened and a few false
+positives are acceptable. Here a false survivor becomes a change to how real payments are
+retried, so the stricter guarantee is worth the sensitivity.
+
+**Consequence.** Testing more hypotheses makes each one harder to confirm, so a proposer that
+sprays guesses is actively worse than one that does not. The proposal budget defaults to eight.

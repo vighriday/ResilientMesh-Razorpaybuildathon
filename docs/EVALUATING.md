@@ -242,6 +242,58 @@ go run ./cmd/meshctl dlq replay <message_id> --yes
 
 ---
 
+## 3b. Check the learning claims
+
+These three need no database, no queue, no credential and no network. They are the ones to run
+first if you want to check the contestable claims rather than the plumbing.
+
+```bash
+go run ./cmd/meshctl learn validate     # ~12 s
+go run ./cmd/meshctl learn discover     # ~45 s
+go run ./cmd/meshctl learn calibrate    # ~20 s
+```
+
+**`learn validate`** is the experiment production cannot run. It estimates what a policy that
+was never executed would have earned, using only a log produced by a different one, prints the
+interval and the diagnostics, and *only then* opens the answer key. Read the last block last,
+because that is the order it happens in.
+
+It also runs the fixed schedule, uniform exploration and the learner over the same world with
+the same pre-drawn outcomes, so what the learning is worth is measured by running it rather
+than estimated. Expect the learner around 31% recovery against the schedule's 24%.
+
+The logging policy behind the *estimate* is uniform rather than the learner, which reads like
+a weakness and is the opposite: by the end of a run the learner has already found the segment
+under test, so the candidate barely differs from the log and a correct estimate of nearly
+nothing would demonstrate very little.
+
+**`learn discover`** asks a proposer for segments worth testing, scores each against data it
+did not influence at a confidence widened for the number of tests, prints the refutations
+beside the survivors, and reveals the planted rule last. With `MESH_LLM_API_KEY` set it uses
+the model; without one the deterministic proposer answers, which is both the fallback and the
+control that says how much the model adds.
+
+**`learn calibrate`** measures whether a predicted recovery probability means what it says,
+out of fold. It reports a real defect rather than a clean bill of health: the model is well
+calibrated in aggregate and overconfident where it is most confident.
+
+All three accept `--json` for machine-readable output, and `--seed` and `--incidents` if you
+want to check that the result is not an artefact of one corpus.
+
+```bash
+# a different world entirely; the interval should still contain the truth
+go run ./cmd/meshctl learn validate --seed 7 --incidents 80000
+```
+
+The coverage claim itself, that a 95% interval contains the truth about 95% of the time, is
+measured over many independent worlds in `internal/lab` rather than asserted from one run:
+
+```bash
+go test ./internal/lab/ -run CoverTheTruth -v
+```
+
+---
+
 ## 4. Verify the claims
 
 Each of these is independent. Run any subset.

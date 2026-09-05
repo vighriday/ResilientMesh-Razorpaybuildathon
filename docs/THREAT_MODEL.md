@@ -106,3 +106,39 @@ Each threat lists the control and the test that proves the control works. A cont
 | At-least-once delivery means duplicate processing | Deliberate, the alternative is lost events. Bounded by `UNIQUE` idempotency on `event_id` |
 | In-memory SSE hub loses subscriptions on restart | Sessions are seconds-to-minutes long and the client reconnects. Persisting them would add a datastore dependency to the latency-critical path for little gain; the limitation is stated honestly to the client rather than papered over |
 | Replay cassettes are recorded, not live | Recorded inference is what makes the benchmark reproducible. The tier is recorded on every incident so it can never be passed off as live |
+
+
+---
+
+## The proposer boundary
+
+`internal/mill` sends aggregated statistics to a model provider and asks for segments worth
+testing. It is a second model boundary and it is narrower than the first.
+
+**What crosses it.** Counts and recovery rates grouped by issuer key, failure class,
+three-hour block of the local day, and retry delay. Nothing else. No payment id, no order id,
+no amount, no customer, and no free text that arrived in a webhook.
+
+That last exclusion is the important one. The classification path accepts `error_reason` as
+attacker-influenced free text and defends it by length-capping and escaping; this path
+carries no payload-derived text at all, so there is nothing in the conversation an attacker
+who controls a webhook body could have written. Prompt injection has no route in.
+
+**What comes back.** A `lab.Hypothesis`: at most three optional filters over fields that
+already exist, and one delay from a closed set. There is no field in which a model could
+express an amount, a customer, a rail, or a rule. Anything that fails validation is discarded
+rather than repaired, because a corrected hypothesis is no longer the one the model proposed
+and the audit record would then attribute a claim it never made.
+
+**Worst case.** A compromised or hallucinating provider names a segment that does not exist.
+It fails its significance test, is recorded as refuted, and consumes one test out of the
+round's budget. It cannot cause an attempt, change an amount, or widen what the gatekeeper
+permits, because it never touches the request path: the proposer runs offline against a log.
+
+**Credentials.** `mill.NewModel` refuses to send a bearer token to a non-loopback host over
+plaintext, rather than warning about it. Provider error text is never echoed; only the
+provider's own error *type* is carried, through a token allowlist.
+
+**Denial of service.** The response is read through a 96 KiB limit and the call is bounded by
+a context deadline. A provider that streams indefinitely cannot exhaust the process, which
+matters more here than on the request path because a discovery round runs unattended.
