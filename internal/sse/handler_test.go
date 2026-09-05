@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -216,41 +217,79 @@ func (h *harness) open(t *testing.T, req *http.Request) *streamConn {
 	return sc
 }
 
-func (sc *streamConn) next(t *testing.T) frame {
-	t.Helper()
+// nextWithin returns the next frame or an error, so a caller running on a
+// spawned goroutine can report through t.Errorf. t.Fatal off the test
+// goroutine only exits that one goroutine, which turns a single cause into a
+// pile of identical-looking failures.
+func (sc *streamConn) nextWithin(d time.Duration) (frame, error) {
 	select {
 	case f, ok := <-sc.frames:
 		if !ok {
 			select {
 			case err := <-sc.errs:
-				t.Fatalf("stream ended: %v", err)
+				return frame{}, fmt.Errorf("stream ended: %w", err)
 			default:
-				t.Fatal("stream ended")
+				return frame{}, errors.New("stream ended")
 			}
 		}
-		return f
-	case <-time.After(5 * time.Second):
-		t.Fatal("no SSE frame within 5s")
-		return frame{}
+		return f, nil
+	case <-time.After(d):
+		return frame{}, fmt.Errorf("no SSE frame within %s", d)
+	}
+}
+
+func (sc *streamConn) next(t *testing.T) frame {
+	t.Helper()
+	f, err := sc.nextWithin(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// nextEventWithin skips preamble comments and heartbeats until a data frame
+// arrives or the deadline passes.
+//
+// The budget is a deadline rather than a frame count, and that distinction is
+// the whole point of this helper. Heartbeats are unbounded in number and
+// bounded only in rate, so counting frames is really a bet on how much wall
+// clock the test will be given. It lost that bet under the race detector: 64
+// concurrent streams on a 30ms heartbeat put more than 32 comments ahead of
+// the event, and a perfectly healthy stream was reported as broken.
+func (sc *streamConn) nextEventWithin(d time.Duration) (frame, domain.SessionEvent, error) {
+	deadline := time.Now().Add(d)
+	skipped := 0
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return frame{}, domain.SessionEvent{}, fmt.Errorf(
+				"no data frame in %s, after %d non-data frames", d, skipped)
+		}
+		f, err := sc.nextWithin(remaining)
+		if err != nil {
+			return frame{}, domain.SessionEvent{}, err
+		}
+		if f.data == "" {
+			skipped++
+			continue
+		}
+		var ev domain.SessionEvent
+		if err := json.Unmarshal([]byte(f.data), &ev); err != nil {
+			return frame{}, domain.SessionEvent{}, fmt.Errorf(
+				"data line is not valid JSON: %w (%q)", err, f.data)
+		}
+		return f, ev, nil
 	}
 }
 
 // nextEvent skips preamble comments and heartbeats.
 func (sc *streamConn) nextEvent(t *testing.T) (frame, domain.SessionEvent) {
 	t.Helper()
-	for i := 0; i < 32; i++ {
-		f := sc.next(t)
-		if f.data == "" {
-			continue
-		}
-		var ev domain.SessionEvent
-		if err := json.Unmarshal([]byte(f.data), &ev); err != nil {
-			t.Fatalf("data line is not valid JSON: %v (%q)", err, f.data)
-		}
-		return f, ev
+	f, ev, err := sc.nextEventWithin(10 * time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("no data frame in 32 frames")
-	return frame{}, domain.SessionEvent{}
+	return f, ev
 }
 
 func waitFor(t *testing.T, what string, cond func() bool) {
@@ -747,13 +786,20 @@ func TestHandlerServesManyConcurrentStreams(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range conns {
 		wg.Add(1)
-		go func(sc *streamConn) {
+		// Each reader reports through t.Errorf rather than t.Fatal: these are
+		// not the test goroutine, and Fatal here would only stop the reader
+		// that called it.
+		go func(n int, sc *streamConn) {
 			defer wg.Done()
-			_, ev := sc.nextEvent(t)
-			if ev.Type != "rail_morph" {
-				t.Errorf("event type = %q, want rail_morph", ev.Type)
+			_, ev, err := sc.nextEventWithin(15 * time.Second)
+			if err != nil {
+				t.Errorf("stream %d: %v", n, err)
+				return
 			}
-		}(conns[i])
+			if ev.Type != "rail_morph" {
+				t.Errorf("stream %d: event type = %q, want rail_morph", n, ev.Type)
+			}
+		}(i, conns[i])
 	}
 	wg.Wait()
 }

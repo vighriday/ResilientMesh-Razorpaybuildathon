@@ -67,7 +67,13 @@ function Gate {
     $status = if ($Optional) { 'WARN' } else { 'FAIL' }
     $colour = if ($Optional) { 'Yellow' } else { 'Red' }
     Write-Host "  $status  $Name  (${elapsed}s)" -ForegroundColor $colour
-    Write-Host ($_.Exception.Message -split "`n" | Select-Object -First 15 | ForEach-Object { "        $_" }) -ForegroundColor DarkGray
+    # Show why it failed, not what came first: go test prints its passing
+    # packages before the failing one, so a leading excerpt is a list of
+    # successes with the cause cut off the bottom.
+    $msg = $_.Exception.Message -split "`n"
+    $cause = $msg | Select-String -Pattern 'DATA RACE|^--- FAIL|^FAIL|^\s*panic:|^# |test timed out' | Select-Object -First 12
+    if ($cause) { Write-Host ($cause | ForEach-Object { "        $_" }) -ForegroundColor DarkGray }
+    Write-Host (($msg | Select-Object -Last 12) | ForEach-Object { "        $_" }) -ForegroundColor DarkGray
     if (-not $Optional) { $script:Failed++ }
     [void]$script:Results.Add([pscustomobject]@{ Name = $Name; Status = $status; Detail = ($_.Exception.Message -split "`n" | Select-Object -First 3) -join ' '; Seconds = $elapsed })
     return $null
@@ -135,6 +141,10 @@ Section 'Security gates'
 
 Gate 'Leak scan (nothing private is tracked)' { & go run ./cmd/leakscan }
 Gate 'Leak scanner self-tests'                { & go test ./cmd/leakscan -count=1 }
+
+# The README states numbers. This re-derives every one a machine can check and
+# fails if any has drifted. See cmd/receipts and docs/receipts.json.
+Gate "The README's own claims, re-derived" { & go run ./cmd/receipts -tier fast }
 
 Gate 'Dependency audit' {
   & go install golang.org/x/vuln/cmd/govulncheck@latest

@@ -68,7 +68,15 @@ gate() {
     ROWS+=("| $name | WARN | $elapsed |")
   else
     printf '  %sFAIL%s  %s  (%ss)\n' "$RED" "$RESET" "$name" "$elapsed"
-    printf '%s\n' "$out" | head -15 | sed 's/^/        /'
+    # Show why it failed, not what came first. `go test ./...` prints its
+    # passing packages before the failing one, so a leading excerpt is a list
+    # of successes with the cause cut off the bottom. This gate hid a real
+    # failure exactly once, which was once more than enough.
+    printf '%s
+' "$out" | grep -aE 'DATA RACE|^--- FAIL|^FAIL|^ *panic:|^# |test timed out' \
+      | head -12 | sed 's/^/        /'
+    printf '%s
+' "$out" | tail -12 | sed 's/^/        /'
     ROWS+=("| $name | FAIL | $elapsed |")
     FAILED=$((FAILED + 1))
   fi
@@ -123,6 +131,12 @@ section 'Security gates'
 
 gate 'Leak scan (nothing private is tracked)' go run ./cmd/leakscan
 gate 'Leak scanner self-tests'                go test ./cmd/leakscan -count=1
+
+# The README states numbers. This re-derives every one a machine can check and
+# fails if any has drifted from what the code now does, which is the only thing
+# that stops a document quietly becoming a description of a program that no
+# longer exists. See cmd/receipts and docs/receipts.json.
+gate "The README's own claims, re-derived" go run ./cmd/receipts -tier fast
 
 run_vulncheck() {
   go install golang.org/x/vuln/cmd/govulncheck@latest >/dev/null 2>&1 || return 1
