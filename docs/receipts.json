@@ -1,0 +1,127 @@
+{
+  "schema": "resilientmesh.receipts.v1",
+  "note": "Every number the README states, with the command that produces it, the value recorded when it was written, and the observation that would prove it false. Run by cmd/receipts and by scripts/judge.sh. A figure that drifts fails the build. Three receipts are marked browser: they are claims about what a reader's own machine does with the published artefacts, and this repository asserting them would be the substitution the project exists to refuse.",
+  "receipts": [
+    {
+      "id": "R1",
+      "claim": "The gatekeeper's invariants hold in every reachable state, not merely in every sampled one.",
+      "tier": "fast",
+      "command": ["go", "run", "./cmd/modelcheck"],
+      "timeout_seconds": 300,
+      "checks": [
+        {"label": "reachable states", "pattern": "reachable states\\s+(\\d+)", "expect": "510720"},
+        {"label": "transitions", "pattern": "transitions\\s+(\\d+)", "expect": "8390192"},
+        {"label": "violations", "pattern": "total violations (\\d+)", "expect": "0"},
+        {"label": "invariants proved", "pattern": "\\[HOLDS \\]", "count": true, "expect": "9"},
+        {"label": "state space digest", "pattern": "digest\\s+([0-9a-f]{64})", "expect": "e47bc4971bc13d58831976759ac57c40023d6387eadf42a4f59339ada9a735f2"}
+      ],
+      "falsifier": "One violation anywhere, or a digest that moves while internal/gatekeeper is unchanged. The digest covers the enumerated space itself, so a silently narrowed state space fails here rather than passing quietly with fewer states to check."
+    },
+    {
+      "id": "R2",
+      "claim": "An off-policy estimate made from a log alone contains the true value of a policy that was never executed.",
+      "tier": "fast",
+      "command": ["go", "run", "./cmd/meshctl", "learn", "validate"],
+      "timeout_seconds": 600,
+      "checks": [
+        {"label": "true lift", "pattern": "true lift\\s+([0-9.]+)", "expect": "1200.2"},
+        {"label": "estimated lift", "pattern": "lift over deployed\\s+([0-9.]+)", "expect": "890.2"},
+        {"label": "relative error on value", "pattern": "relative error\\s+(-?[0-9.]+)%", "expect": "-1.52"},
+        {"label": "quantities inside their interval", "pattern": "inside the interval", "count": true, "expect": "2"},
+        {"label": "learner recovery rate", "pattern": "thompson\\s+([0-9.]+)%", "expect": "30.9"},
+        {"label": "fixed schedule recovery rate", "pattern": "backoff\\s+([0-9.]+)%", "expect": "23.8"},
+        {"label": "decisions the two policies differ on", "pattern": "decisions that differ\\s+(\\d+)", "expect": "1645"}
+      ],
+      "falsifier": "The truth landing outside the interval. That is the whole claim, and it is the one figure in this project that cannot be obtained on live traffic, because production has no answer key to open."
+    },
+    {
+      "id": "R3",
+      "claim": "A discovery round finds a rule nobody encoded and refutes the plausible decoys beside it.",
+      "tier": "fast",
+      "command": ["go", "run", "./cmd/meshctl", "learn", "discover"],
+      "timeout_seconds": 600,
+      "env_unset": ["MESH_LLM_API_KEY", "MESH_LLM_BASE_URL", "MESH_LLM_MODEL"],
+      "checks": [
+        {"label": "hypotheses tested", "pattern": "hypotheses tested\\s+(\\d+)", "expect": "8"},
+        {"label": "confidence per test", "pattern": "confidence per test\\s+([0-9.]+)", "expect": "0.9938"},
+        {"label": "survived", "pattern": "\\[SURVIVED\\]", "count": true, "expect": "3"},
+        {"label": "refuted", "pattern": "\\[refuted \\]", "count": true, "expect": "5"},
+        {"label": "planted rule", "pattern": "(Found)\\.", "expect": "Found"}
+      ],
+      "falsifier": "The planted rule going unfound, or a decoy surviving. The credentials for the language model are cleared before this runs, so what is recorded here is the deterministic proposer's answer and a reviewer gets the same one."
+    },
+    {
+      "id": "R4",
+      "claim": "The confidence score the gate thresholds on is measured against outcomes, and the defect that measurement found is stated rather than corrected away.",
+      "tier": "fast",
+      "command": ["go", "run", "./cmd/meshctl", "learn", "calibrate"],
+      "timeout_seconds": 600,
+      "checks": [
+        {"label": "expected calibration error", "pattern": "expected calibration error\\s+([0-9.]+)", "expect": "0.0105"},
+        {"label": "worst bin", "pattern": "worst bin\\s+([0-9.]+)", "expect": "0.3413"},
+        {"label": "noise floor at this size", "pattern": "noise floor at this size\\s+([0-9.]+)", "expect": "0.0035"},
+        {"label": "after isotonic correction", "pattern": "after isotonic correction\\s+([0-9.]+)", "expect": "0.0008"},
+        {"label": "verdict", "pattern": "verdict\\s+(real miscalibration, not sampling noise)", "expect": "real miscalibration, not sampling noise"}
+      ],
+      "falsifier": "The error falling below the noise floor, which would mean the reported defect was sampling noise all along. The floor is measured by bootstrapping under a perfectly calibrated null at this exact sample size, because expected calibration error is biased upward and any correction appears to help."
+    },
+    {
+      "id": "R5",
+      "claim": "Nothing private is tracked in this repository.",
+      "tier": "fast",
+      "command": ["go", "run", "./cmd/leakscan"],
+      "timeout_seconds": 300,
+      "checks": [
+        {"label": "verdict", "pattern": "(PASS)", "expect": "PASS"},
+        {"label": "tracked files walked", "pattern": "(\\d+) tracked files"},
+        {"label": "direct dependencies", "pattern": "(\\d+) direct dependencies", "expect": "6"}
+      ],
+      "falsifier": "Any credential shape, private-document path, dotenv value or control character in a tracked file. The file count is reported and not asserted, because it legitimately moves; the verdict is asserted, because it must not."
+    },
+    {
+      "id": "R6",
+      "claim": "The suite is green, with no build tags, no skipped packages and no known-failing test quietly excluded.",
+      "tier": "slow",
+      "command": ["go", "test", "./...", "-count=1"],
+      "timeout_seconds": 1800,
+      "checks": [
+        {"label": "failures", "pattern": "(?m)^(FAIL|---\\s+FAIL)", "absent": true},
+        {"label": "build errors", "pattern": "(?m)^# ", "absent": true}
+      ],
+      "falsifier": "Any failing package. The one defect this project knows about and has not fixed is reproduced by a command in the README rather than by a test that has been deleted, so this staying green is not the same as there being nothing wrong."
+    },
+    {
+      "id": "R7",
+      "claim": "The concurrent paths are race-free under the detector.",
+      "tier": "slow",
+      "command": ["go", "test", "./...", "-race", "-short", "-count=1"],
+      "timeout_seconds": 1800,
+      "checks": [
+        {"label": "data races", "pattern": "DATA RACE", "absent": true},
+        {"label": "failures", "pattern": "(?m)^(FAIL|---\\s+FAIL)", "absent": true}
+      ],
+      "falsifier": "A DATA RACE report. Short mode here skips the statistical experiments in internal/lab and internal/mill, which are single-goroutine arithmetic that the detector has nothing to say about and which exceed the test binary timeout when it is enabled. It skips nothing that touches a goroutine."
+    },
+    {
+      "id": "B1",
+      "claim": "The gatekeeper in the published page is the same package the server imports, and it agrees with it on every recorded decision.",
+      "tier": "browser",
+      "why": "The claim is that a WebAssembly build of internal/gatekeeper, running on your machine, returns byte-identical decisions to the build in this repository. A Go process re-deriving those decisions here would be the server build agreeing with itself, which proves nothing. Open the page and press \"Re-derive every decision\": eleven recorded inputs, every field compared including which invariants fired and in what order.",
+      "falsifier": "Any field differing on any of the eleven, which would mean the page is running a second implementation that has drifted from the one under test."
+    },
+    {
+      "id": "B2",
+      "claim": "A real run's audit chain can be verified by someone who does not trust this codebase.",
+      "tier": "browser",
+      "why": "The page ships all 1,112 entries as the exact bytes the ledger hashed and re-derives every digest with the browser's own crypto.subtle, not with any code from this repository. Verifying it here would be this project's hashing agreeing with this project's hashing.",
+      "falsifier": "A digest that does not reproduce, or the forgery button planting a change in the middle of the chain and verification failing to localise the break to that exact sequence number. A ledger that only catches a modified head catches nothing, because the head is what an attacker rewrites last."
+    },
+    {
+      "id": "B3",
+      "claim": "One payment can be proved on its own, without disclosing anybody else's traffic.",
+      "tier": "browser",
+      "why": "The claim is about what a merchant can hand a bank: a bundle small enough to send and self-contained enough to check. Press \"Verify this payment on its own\" and watch nine entries prove against the Merkle root with eleven sibling hashes each, while the other 1,103 entries stay unread.",
+      "falsifier": "A bundle that requires the full ledger to check, or a forged entry passing. The forge button exists for the second one."
+    }
+  ]
+}
