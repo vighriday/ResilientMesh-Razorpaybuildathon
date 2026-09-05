@@ -223,6 +223,34 @@ const (
 	// and were they a person?" is the first question asked about any mutation
 	// months later, and a ledger that cannot answer it is not an audit trail.
 	AuditOperatorAction AuditKind = "OPERATOR_ACTION"
+
+	// AuditPolicyDecision records a scheduling choice together with the
+	// probability it was drawn with.
+	//
+	// This is the entry that makes the ledger more than a history. The
+	// propensity is written here, before the attempt runs and therefore before
+	// its outcome exists, and the hash chain fixes the ordering. Anyone can
+	// later estimate what a different recovery policy would have earned on this
+	// traffic, and anyone can check that the probabilities the estimate rests
+	// on were not chosen after the results were known. Off-policy evaluation
+	// without that guarantee is an argument, not evidence. See internal/ope.
+	AuditPolicyDecision AuditKind = "POLICY_DECISION"
+
+	// AuditHypothesisTested records one proposed segment and its verdict,
+	// including the verdicts that failed. A record of what was refuted is most
+	// of what makes a record of what survived believable, and it is the only
+	// defence against a reader who suspects the survivors were selected after
+	// the fact.
+	AuditHypothesisTested AuditKind = "HYPOTHESIS_TESTED"
+
+	// AuditPolicyAdopted records a change to the recovery policy together with
+	// the interval that justified it.
+	AuditPolicyAdopted AuditKind = "POLICY_ADOPTED"
+
+	// AuditCalibration records a measurement of how well the inference tier
+	// stated confidence matches the outcomes it was stated about, and the
+	// threshold that measurement implies.
+	AuditCalibration AuditKind = "CALIBRATION_MEASURED"
 )
 
 // AuditEntry is one link in a hash chain. Each entry commits to its

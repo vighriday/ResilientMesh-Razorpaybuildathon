@@ -43,6 +43,7 @@ import (
 	"github.com/hriday/razorpay-resilient-mesh/internal/sse"
 	"github.com/hriday/razorpay-resilient-mesh/internal/store"
 	"github.com/hriday/razorpay-resilient-mesh/internal/telemetry"
+	"github.com/hriday/razorpay-resilient-mesh/internal/tuner"
 	"github.com/hriday/razorpay-resilient-mesh/internal/worker"
 )
 
@@ -101,6 +102,7 @@ type App struct {
 	q       *queue.Redis
 
 	ledger    *audit.Ledger
+	tuner     *tuner.Tuner
 	telemetry *telemetry.Recorder
 	breaker   *breaker.Breaker
 	downtime  *downtime.Poller
@@ -296,6 +298,20 @@ func New(ctx context.Context, cfg config.Config, opts Options) (a *App, err erro
 		app.relay = outbox.New(outbox.DefaultConfig(), pg, app.q, app.ledger, logger, app.metr,
 			rand.New(rand.NewSource(app.cfg.Seed^relaySeedSalt)))
 
+		// The learner is opt-out rather than opt-in, but a zero floor disables
+		// it entirely and leaves the deterministic schedule in place. Its seed
+		// is derived from the process seed so a replayed run makes the same
+		// exploration decisions as the run it is replaying.
+		if app.cfg.ExploreFloor > 0 {
+			app.tuner, err = tuner.New(tuner.Config{
+				Floor: app.cfg.ExploreFloor,
+				Seed:  app.cfg.Seed ^ tunerSeedSalt,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("app: building the retry-delay learner: %w", err)
+			}
+		}
+
 		app.pool, err = worker.New(worker.Config{
 			Concurrency:   app.cfg.WorkerConcurrency,
 			SessionTTL:    app.cfg.SessionTTL,
@@ -318,6 +334,7 @@ func New(ctx context.Context, cfg config.Config, opts Options) (a *App, err erro
 			Metrics:         app.metr,
 			AvailableRails:  merchantRails,
 			DowntimeSignals: app.downtime.Signals,
+			Tuner:           app.tuner,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("app: building the worker pool: %w", err)
@@ -360,6 +377,12 @@ var merchantRails = []domain.Rail{
 	domain.RailNetbanking,
 	domain.RailWallet,
 }
+
+// tunerSeedSalt keeps the learner's exploration draws from replaying the same
+// sequence as any other seeded component in the process. Two subsystems sharing
+// a stream is not a correctness bug here, but it makes a run harder to reason
+// about than it needs to be.
+const tunerSeedSalt = 0x2545f4914f6cdd1d
 
 // relaySeedSalt keeps the outbox relay's jitter from replaying the same
 // sequence as the policy engine's backoff. Two components seeded identically

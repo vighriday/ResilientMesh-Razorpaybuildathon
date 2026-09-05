@@ -19,11 +19,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hriday/razorpay-resilient-mesh/internal/bandit"
 	"github.com/hriday/razorpay-resilient-mesh/internal/domain"
 	"github.com/hriday/razorpay-resilient-mesh/internal/ingest"
 	"github.com/hriday/razorpay-resilient-mesh/internal/obs"
+	"github.com/hriday/razorpay-resilient-mesh/internal/policy"
 	"github.com/hriday/razorpay-resilient-mesh/internal/queue"
 	"github.com/hriday/razorpay-resilient-mesh/internal/store"
+	"github.com/hriday/razorpay-resilient-mesh/internal/tuner"
 )
 
 // Config tunes the pool.
@@ -149,6 +152,16 @@ type Deps struct {
 	// It is a function rather than a method so the simulator can substitute a
 	// deterministic view without implementing the whole poller.
 	DowntimeSignals func(issuerKey string) []domain.DowntimeSignal
+
+	// Tuner chooses the retry delay from among the ones the gatekeeper has
+	// already agreed to, and learns from what happens.
+	//
+	// It is optional and nil is the safe value: without it the delay is
+	// whatever the deterministic policy engine computed, which is the behaviour
+	// this system had before it learned anything. With it, every scheduling
+	// decision is drawn from an explicit distribution and that distribution is
+	// committed to the audit ledger before the attempt runs. See internal/tuner.
+	Tuner *tuner.Tuner
 }
 
 // Pool consumes incidents and drives them through recovery.
@@ -387,6 +400,19 @@ func (p *Pool) Handle(ctx context.Context, msg domain.QueueMessage) error {
 		}
 	}
 
+	// The learner sits here, between the advisory proposal and the gate.
+	//
+	// It may only ask for a longer wait than the policy engine computed, and it
+	// is offered only the delays that are certainly at or above that: the
+	// ceiling of the engine jitter range, which is deterministic and exported,
+	// bounds every draw the gate can make. An arm below it might be silently
+	// overridden, and a decision that is logged as chosen and then not taken
+	// would corrupt the propensity record for every future evaluation.
+	choice := p.chooseDelay(ctx, incident, payment, snapshot, proposal, attempt)
+	if choice != nil {
+		proposal.RecommendedDelaySec = choice.DelaySec
+	}
+
 	cmd, err := p.deps.Gatekeeper.Decide(ctx, domain.GateInput{
 		IncidentID:     incidentID,
 		Payment:        payment,
@@ -399,6 +425,13 @@ func (p *Pool) Handle(ctx context.Context, msg domain.QueueMessage) error {
 	})
 	if err != nil {
 		return fmt.Errorf("worker: gating incident %s: %w", incidentID, err)
+	}
+
+	// Written before the attempt runs, and therefore before its outcome exists.
+	// The hash chain fixes that ordering, which is the whole reason this log can
+	// later support a counterfactual nobody has to take on trust.
+	if choice != nil {
+		p.recordPolicyDecision(ctx, incidentID, *choice, cmd)
 	}
 
 	p.audit(ctx, domain.AuditGateDecision, incidentID, map[string]any{
@@ -604,6 +637,18 @@ func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain
 		return fmt.Errorf("worker: executing incident %s: %w", incident.ID, err)
 	}
 
+	// The learner reads its own audit trail to find out what it chose.
+	//
+	// The choice and the outcome are separated by the delay itself: the arm is
+	// picked on the pass that schedules the retry and the result arrives on a
+	// later redelivery, possibly hours afterwards and certainly in a different
+	// process invocation. Rather than carry that across in memory, where a
+	// restart would lose it, the decision is read back from the ledger entry
+	// that already had to be written. The record is the source of truth for
+	// what was decided, so the learner and the auditor are looking at the same
+	// row.
+	p.learnFromOutcome(ctx, incident.ID, rec.Succeeded)
+
 	next := domain.IncidentAbandoned
 	if rec.Succeeded {
 		next = domain.IncidentRecovered
@@ -631,6 +676,125 @@ func (p *Pool) execute(ctx context.Context, incident domain.Incident, cmd domain
 		p.audit(ctx, domain.AuditIncidentClosed, incident.ID, map[string]any{"state": string(next)})
 	}
 	return nil
+}
+
+// chooseDelay draws a retry delay from the learner, or returns nil when there
+// is no learner, no delayed action, or nothing left to choose between.
+//
+// Failures are silent by design and fall back to the deterministic schedule. A
+// learner that cannot answer is a worse schedule, not a broken payment, and
+// there is no version of this system where an optimiser being unavailable is
+// allowed to stop a recovery.
+func (p *Pool) chooseDelay(
+	ctx context.Context,
+	incident domain.Incident,
+	payment domain.PaymentEntity,
+	snapshot domain.TelemetrySnapshot,
+	proposal domain.DiagnosticProposal,
+	attempt int,
+) *tuner.Decision {
+	if p.deps.Tuner == nil || ctx.Err() != nil {
+		return nil
+	}
+	class := domain.ParseFailureClass(string(proposal.FailureClassification))
+	if !class.Recoverable() {
+		// The gate is about to abstain. Spending a decision on it would put a
+		// propensity in the ledger for an attempt that never happens.
+		return nil
+	}
+	switch domain.ParseAction(string(proposal.RecommendedAction)) {
+	case domain.ActionAsyncRetry, domain.ActionMandateCascade:
+	default:
+		// A morph lands inside a live session and a refresh changes the
+		// presentation rather than the schedule. Neither has a delay to choose.
+		return nil
+	}
+
+	ceiling := policy.BackoffCeiling(attempt, class, snapshot)
+	hour := p.deps.Clock.Now().Hour()
+	cell := tuner.CellFor(incident.IssuerKey, class, hour, attempt)
+
+	d, err := p.deps.Tuner.Choose(cell, int64(ceiling/time.Second), payment.Amount, gatewayFeePaisa)
+	if err != nil {
+		p.count("worker.tuner_declined")
+		return nil
+	}
+	return &d
+}
+
+// gatewayFeePaisa is what an attempt costs whether or not it is authorised.
+//
+// It is what stops the learner concluding that the optimal policy is to retry
+// everything forever, and it is a constant here rather than a learned parameter
+// for the same reason every other money value in this system is: no model gets
+// an opinion about an amount.
+const gatewayFeePaisa int64 = 300
+
+// recordPolicyDecision commits the scheduling choice and its propensity.
+func (p *Pool) recordPolicyDecision(ctx context.Context, incidentID string, d tuner.Decision, cmd domain.SanitizedCommand) {
+	// Honoured means the gate scheduled exactly the delay that was drawn. It is
+	// false when a later invariant raised the delay, most often the RBI cooling
+	// window on a recurring debit, and in that case the action taken is not the
+	// action the distribution was over. Recording it as though it were would
+	// put a false propensity in the log, so the entry is written with the flag
+	// clear and internal/ope callers skip it.
+	honoured := cmd.Executable() && cmd.DelaySeconds == d.DelaySec
+
+	detail := map[string]any{
+		"cell":          string(d.Cell),
+		"arm":           string(d.Arm),
+		"delay_seconds": d.DelaySec,
+		"propensity":    d.Propensity,
+		"distribution":  d.Dist,
+		"permitted":     d.Permitted,
+		"explored":      d.Explored,
+		"greedy_arm":    string(d.Greedy),
+		"model_digest":  d.ModelDigest,
+		"honoured":      honoured,
+	}
+	if !honoured {
+		detail["gate_delay_seconds"] = cmd.DelaySeconds
+	}
+	p.audit(ctx, domain.AuditPolicyDecision, incidentID, detail)
+	if d.Explored {
+		p.count("worker.explored")
+	}
+}
+
+// learnFromOutcome folds a result back into the learner, reading the decision
+// out of the ledger entry that recorded it.
+func (p *Pool) learnFromOutcome(ctx context.Context, incidentID string, recovered bool) {
+	if p.deps.Tuner == nil || p.deps.Ledger == nil {
+		return
+	}
+	entries, err := p.deps.Ledger.List(ctx, incidentID)
+	if err != nil {
+		p.deps.Log.Warn("could not read the decision back to learn from it", "incident_id", incidentID, "error", err)
+		return
+	}
+	var chosen struct {
+		Cell     string `json:"cell"`
+		Arm      string `json:"arm"`
+		Honoured bool   `json:"honoured"`
+	}
+	var found bool
+	// Backwards: the most recent decision is the one this outcome belongs to.
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Kind != domain.AuditPolicyDecision {
+			continue
+		}
+		if err := json.Unmarshal(entries[i].Detail, &chosen); err != nil {
+			return
+		}
+		found = true
+		break
+	}
+	if !found || !chosen.Honoured || chosen.Cell == "" || chosen.Arm == "" {
+		return
+	}
+	if err := p.deps.Tuner.Observe(bandit.Cell(chosen.Cell), bandit.Arm(chosen.Arm), recovered); err != nil {
+		p.deps.Log.Warn("learner rejected an outcome", "incident_id", incidentID, "error", err)
+	}
 }
 
 // recordOutcome feeds telemetry and the breaker. Failures here are logged, not

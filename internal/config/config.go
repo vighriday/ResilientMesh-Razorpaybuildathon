@@ -117,6 +117,7 @@ const (
 	envDemoMode          = EnvPrefix + "DEMO_MODE"
 	envSeed              = EnvPrefix + "SEED"
 	envDemoTimeScale     = EnvPrefix + "DEMO_TIME_SCALE"
+	envExploreFloor      = EnvPrefix + "EXPLORE_FLOOR"
 )
 
 // Input bounds. Environment variables are external input on a machine that may
@@ -207,6 +208,21 @@ type Config struct {
 	RazorpayKeySecret string
 
 	DemoMode bool
+	// ExploreFloor is the minimum probability the learner keeps on every retry
+	// delay the gatekeeper has permitted.
+	//
+	// It is the price of an evaluable log. At zero the system exploits what it
+	// already believes, recovers marginally more today, and produces a history
+	// from which no future policy can be assessed without deploying it to real
+	// customers first. Above zero it spends that fraction of decisions keeping
+	// the log informative about actions it did not favour, which is what makes
+	// the counterfactual estimates in internal/ope possible at all.
+	//
+	// Zero disables the learner entirely and restores the purely deterministic
+	// schedule, which is the behaviour to fall back to if the learning layer is
+	// ever in doubt.
+	ExploreFloor float64
+
 	// DemoTimeScale compresses the wait before a scheduled retry so a
 	// demonstration reaches an outcome. It never changes a decision; see
 	// worker.Config.DemoTimeScale. One means no compression.
@@ -245,6 +261,7 @@ func Default() Config {
 		SimulatorAddr:     "127.0.0.1:8081",
 		Seed:              42,
 		DemoTimeScale:     1,
+		ExploreFloor:      0.02,
 	}
 }
 
@@ -314,6 +331,7 @@ func LoadFrom(lookup Lookup) (Config, error) {
 	c.DemoMode = l.boolean(envDemoMode, c.DemoMode)
 	c.Seed = l.integer64(envSeed, c.Seed)
 	c.DemoTimeScale = l.float(envDemoTimeScale, c.DemoTimeScale)
+	c.ExploreFloor = l.float(envExploreFloor, c.ExploreFloor)
 
 	errs := l.errs
 	if len(errs) == 0 {
@@ -411,6 +429,10 @@ func (c *Config) Validate() error {
 	// which no caller wants and which would silently make a regulatory
 	// window longer than the gatekeeper computed.
 	checkFloat(&errs, envDemoTimeScale, c.DemoTimeScale, 1, 10000)
+	// A floor at or above a fifth would spend more on exploration than any
+	// plausible recovery gain is worth, so it is refused rather than warned
+	// about.
+	checkFloat(&errs, envExploreFloor, c.ExploreFloor, 0, 0.2)
 
 	checkPaisa(&errs, "gateway_fee_per_attempt_paisa", c.CostModel.GatewayFeePerAttemptPaisa)
 	checkPaisa(&errs, "comms_cost_per_message_paisa", c.CostModel.CommsCostPerMessagePaisa)
@@ -714,6 +736,7 @@ func (c Config) logAttrs() []slog.Attr {
 		slog.Int("max_attempts", c.MaxAttempts),
 		slog.Float64("breaker_trip_rate", c.BreakerTripRate),
 		slog.Float64("demo_time_scale", c.DemoTimeScale),
+		slog.Float64("explore_floor", c.ExploreFloor),
 		slog.Int("breaker_min_samples", c.BreakerMinSamples),
 		slog.Duration("breaker_cooldown", c.BreakerCooldown),
 		slog.Duration("telemetry_window", c.TelemetryWindow),
