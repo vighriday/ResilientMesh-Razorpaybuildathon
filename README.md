@@ -30,7 +30,7 @@ system that produced it.
 | | | |
 |---|---|---|
 | **Attack it** | **[huggingface.co/spaces/hriday29/resilientmesh](https://huggingface.co/spaces/hriday29/resilientmesh)** | The real gatekeeper, compiled to WebAssembly. Send it proposals no model would produce and watch fourteen invariants refuse them, **in your browser**, with no server involved. |
-| **Verify it** | same page | Re-derives every audit digest, then proves one payment on its own with a handful of sibling hashes instead of the whole ledger. Both run on your machine. |
+| **Verify it** | same page | Re-derives all 1,112 audit digests, then proves one payment on its own with 11 sibling hashes instead of the whole ledger. Both run on your machine. |
 | **Falsify it** | `go run ./cmd/meshctl learn validate` | Estimates what a policy that was never executed would have earned, from a log alone, then **opens the answer key** and reports whether the interval was right. No database, no key, no network. |
 | **Run it** | `go run ./cmd/meshdemo` | The whole system, two minutes. No Docker, no account, no key. |
 
@@ -93,7 +93,7 @@ minutes and writes a transcript to `artifacts/DEMO_REPORT.md`.
      LOW_CONFIDENCE_ABSTAIN   1           the model was not sure enough to spend money
 
   5. The audit ledger, and an attack on it
-  ✓ Chain intact: 538 entries verified, head e61cea979b8ca13d...
+  ✓ Chain intact: 1,112 entries verified, head 364393aee287352e...
   · Editing entry 269 directly in PostgreSQL, as an attacker with database access would
   ✓ Detected at entry 269, the exact row that was edited
 ```
@@ -493,7 +493,7 @@ payment and discloses nothing about any other.
 
 <div align="center">
 <img src="docs/img/space-evidence.png" alt="Nine ledger entries proved against a Merkle root with eight sibling hashes each" width="900">
-<br><em>Nine entries proved in 2 ms with 8 sibling hashes each, without reading the other 585 entries.</em>
+<br><em>Nine entries proved with 11 sibling hashes each, without reading the other 1,103.</em>
 </div>
 
 ```bash
@@ -531,13 +531,44 @@ absorbUint(h, uint64(e.At.UTC().UnixNano()))
 absorbStr(h, e.PrevHash)
 ```
 
+### What the chain now carries
+
+The published run is a real one, and 220 of its 1,112 entries are `POLICY_DECISION` records.
+Each one is written before its attempt runs:
+
+```json
+{
+  "cell": "issuer=netbanking:SBIN|class=CUSTOMER_ACTION_REQUIRED|hb=5|att=1",
+  "arm": "retry_after_6h",
+  "delay_seconds": 21600,
+  "propensity": 0.32456,
+  "distribution": {"retry_after_2h": 0.36592, "retry_after_6h": 0.32456, "retry_after_24h": 0.30952},
+  "permitted": ["retry_after_24h", "retry_after_2h", "retry_after_6h"],
+  "greedy_arm": "retry_after_24h",
+  "explored": true,
+  "honoured": true,
+  "model_digest": "9628a8b9d9b456a4d8fe09297e4709f630eb0b8a30cb178e14505be1fbad3f94"
+}
+```
+
+Three things are worth noticing. The five-minute and thirty-minute delays are **absent from
+the permitted set**, because the gate had already removed them. `explored` is true, so this
+decision was spent on learning rather than on the arm the model currently favours, and it says
+so rather than leaving that to be inferred. And `model_digest` pins the exact belief state the
+draw came from, so the decision can be re-derived by someone who does not trust whoever is
+presenting it.
+
+The propensity is in the chain rather than in a metrics store because a metrics store can be
+backfilled. This cannot: the entry commits to its predecessor, and the outcome of the attempt
+lands further down the same chain.
+
 The demonstration attacks it. It edits a row **in the middle of the chain** directly in
 PostgreSQL, as an attacker with database access would, and requires verification to localise
 the break to that exact sequence number. A ledger that only catches a modified head catches
 nothing, because the head is what an attacker rewrites last.
 
 **You can check this without running anything.** The
-[evidence page](https://huggingface.co/spaces/hriday29/resilientmesh) ships all 538 entries of
+[evidence page](https://huggingface.co/spaces/hriday29/resilientmesh) ships all 1,112 entries of
 a real run as the exact bytes the ledger hashed, re-derives every digest with `crypto.subtle`
 in your browser, and gives you a button that plants a forgery.
 

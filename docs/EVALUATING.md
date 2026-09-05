@@ -2,7 +2,7 @@
 
 > **A published record of one real run** is at
 > <https://huggingface.co/spaces/hriday29/resilientmesh>. It carries the full narration, one
-> incident followed end to end, and all 538 entries of that run's audit ledger. The page
+> incident followed end to end, and all 1,112 entries of that run's audit ledger. The page
 > re-derives every SHA-256 digest in your browser and lets you plant a forgery in the chain,
 > so the tamper-evidence claim can be checked without running anything at all.
 >
