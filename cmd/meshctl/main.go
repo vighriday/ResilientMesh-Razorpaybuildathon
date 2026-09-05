@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -28,6 +29,7 @@ import (
 	"github.com/hriday/razorpay-resilient-mesh/internal/audit"
 	"github.com/hriday/razorpay-resilient-mesh/internal/config"
 	"github.com/hriday/razorpay-resilient-mesh/internal/domain"
+	"github.com/hriday/razorpay-resilient-mesh/internal/mill"
 	"github.com/hriday/razorpay-resilient-mesh/internal/obs"
 	"github.com/hriday/razorpay-resilient-mesh/internal/queue"
 	"github.com/hriday/razorpay-resilient-mesh/internal/store"
@@ -63,9 +65,32 @@ const usage = `meshctl — ResilientMesh operator CLI
   meshctl mandate halt <sub_id> --reason <text> --yes
   meshctl mandate resume <sub_id> --yes
 
+  meshctl learn validate                  estimate what a policy that was never
+                                          run would have earned, from a log
+                                          alone, then open the answer key and
+                                          report whether the interval was right
+  meshctl learn discover                  propose segments worth testing, score
+                                          each against held-out data with the
+                                          confidence widened for the number of
+                                          tests, then reveal the planted rule
+  meshctl learn calibrate                 measure whether the inference tier
+                                          stated confidence matches how often it
+                                          is right, and what the deployed
+                                          threshold actually buys
+
+The three learn commands need no database, queue, credential or network. They
+are the ones to run first if you want to check the contestable claims rather
+than the plumbing.
+
 Global flags:
   --json      machine-readable output
   --yes       confirm a mutating command
+
+learn flags:
+  --incidents N   corpus size (default 40000)
+  --seed N        fixes the world, the exploration and every bootstrap
+  --proposals N   how many hypotheses one discovery round tests
+  --cassettes DIR where to read the recorded inference corpus from
 
 Configuration comes from the same MESH_* environment variables the services
 read. See .env.example.
@@ -110,6 +135,35 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "meshctl: %v\n", err)
 		return exitUsage
 	}
+	// The learn commands run entirely in process against a generated corpus, so
+	// they are dispatched before any connection is attempted. Requiring a
+	// database to check a statistical claim would be a needless barrier to the
+	// part of this project most worth checking.
+	if rest[0] == "learn" {
+		if len(rest) < 2 {
+			fmt.Fprint(stderr, usage)
+			return exitUsage
+		}
+		opts := parseLearnFlags(rest[2:])
+		var err error
+		switch rest[1] {
+		case "validate":
+			err = cmdLearnValidate(ctx, g, opts.incidents, opts.seed, stdout)
+		case "discover":
+			err = cmdLearnDiscover(ctx, g, opts.incidents, opts.seed, opts.proposals, stdout)
+		case "calibrate":
+			err = cmdLearnCalibrate(ctx, g, opts.cassettes, stdout)
+		default:
+			fmt.Fprintf(stderr, "meshctl: unknown learn subcommand %q\n", rest[1])
+			return exitUsage
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "meshctl: %v\n", err)
+			return exitFailure
+		}
+		return exitOK
+	}
+
 	// selftest is the one command that builds its own stack rather than
 	// attaching to a running one, so it is dispatched before the connection is
 	// established and before the managed-mode guard below.
@@ -291,6 +345,42 @@ func dispatch(ctx context.Context, c *conn, g globals, args []string, out io.Wri
 	default:
 		return badUsage("unknown command %q", args[0])
 	}
+}
+
+// learnFlags are parsed here rather than as globals because none of them mean
+// anything to any other command.
+type learnFlags struct {
+	incidents int
+	seed      int64
+	proposals int
+	cassettes string
+}
+
+func parseLearnFlags(args []string) learnFlags {
+	f := learnFlags{
+		incidents: defaultLearnIncidents,
+		seed:      defaultLearnSeed,
+		proposals: mill.DefaultProposals,
+	}
+	for i := 0; i+1 < len(args); i++ {
+		switch args[i] {
+		case "--incidents":
+			if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
+				f.incidents = n
+			}
+		case "--seed":
+			if n, err := strconv.ParseInt(args[i+1], 10, 64); err == nil && n >= 0 {
+				f.seed = n
+			}
+		case "--proposals":
+			if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
+				f.proposals = n
+			}
+		case "--cassettes":
+			f.cassettes = args[i+1]
+		}
+	}
+	return f
 }
 
 // ---------------------------------------------------------------------------
