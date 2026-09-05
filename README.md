@@ -956,7 +956,7 @@ eval/          the four-policy benchmark
 | **What it solves** | Failed payments in India are recovered today by blind retries that burn gateway fees, annoy customers, and on recurring mandates can breach RBI's e-mandate rules. ResilientMesh decides each failure on evidence, refuses the ones no retry can fix, obeys the regulatory constraints as hard invariants rather than as prompt instructions, and leaves a tamper-evident record of every decision including the refusals. It then learns a better schedule inside those constraints, and records enough at each decision that the value of a policy change can be estimated from the log before anyone risks a rupee on it. |
 | **Repository** | https://github.com/vighriday/ResilientMesh-Razorpaybuildathon |
 | **Evidence page** | https://huggingface.co/spaces/hriday29/resilientmesh |
-| **Pitch video** | *(to be added)* |
+| **Pitch video** | Submitted with the entry form, and deliberately not linked here |
 
 **On how it was built.** This is heavily AI assisted, and saying so plainly is cheaper than
 having it inferred. The problem selection, the architecture, the decision about which things the
