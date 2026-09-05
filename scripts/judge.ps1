@@ -71,9 +71,9 @@ function Gate {
     # packages before the failing one, so a leading excerpt is a list of
     # successes with the cause cut off the bottom.
     $msg = $_.Exception.Message -split "`n"
-    $cause = $msg | Select-String -Pattern 'DATA RACE|^--- FAIL|^FAIL|^\s*panic:|^# |test timed out' | Select-Object -First 12
+    $cause = $msg | Select-String -Pattern 'DATA RACE|^--- FAIL|^\s*panic:|^# |test timed out' -Context 0, 4 | Select-Object -First 5
     if ($cause) { Write-Host ($cause | ForEach-Object { "        $_" }) -ForegroundColor DarkGray }
-    Write-Host (($msg | Select-Object -Last 12) | ForEach-Object { "        $_" }) -ForegroundColor DarkGray
+    Write-Host (($msg | Select-Object -Last 8) | ForEach-Object { "        $_" }) -ForegroundColor DarkGray
     if (-not $Optional) { $script:Failed++ }
     [void]$script:Results.Add([pscustomobject]@{ Name = $Name; Status = $status; Detail = ($_.Exception.Message -split "`n" | Select-Object -First 3) -join ' '; Seconds = $elapsed })
     return $null

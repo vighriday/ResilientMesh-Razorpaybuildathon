@@ -137,6 +137,20 @@ func validProposalJSON(t *testing.T, overrides map[string]any) string {
 	return string(b)
 }
 
+// generousTimeout is the client timeout for every test whose subject is not
+// the timeout.
+//
+// These tests talk to an httptest server on loopback, so a healthy call
+// completes in well under a millisecond and this value is never approached.
+// The point is that it cannot be approached either: under the race detector,
+// with the whole repository's packages running in parallel, a goroutine can
+// stall for seconds, and a two second client timeout turns that into a failed
+// assertion about credential redaction. A constant chosen against an idle
+// machine is a bet on scheduling, and a test that is not about latency should
+// not be placing one. TestLiveTimesOut sets its own short timeout, because
+// there the timeout is the subject.
+const generousTimeout = 30 * time.Second
+
 func newLiveTier(t *testing.T, baseURL string, timeout time.Duration) (*Live, *lockedBuffer) {
 	t.Helper()
 	logger, buf := debugLogger()
@@ -156,7 +170,7 @@ func TestLiveHappyPath(t *testing.T) {
 	t.Parallel()
 
 	srv, log := newProvider(t, replyWith(validProposalJSON(t, nil)))
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	dc := baseContext()
 	got, err := live.Diagnose(context.Background(), dc)
@@ -212,7 +226,7 @@ func TestLiveOverwritesModelSuppliedProvenance(t *testing.T) {
 		"latency_ms": 999999,
 		"degraded":   true,
 	})))
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	got, err := live.Diagnose(context.Background(), baseContext())
 	if err != nil {
@@ -230,7 +244,7 @@ func TestLiveRepairsInvalidJSONExactlyOnce(t *testing.T) {
 		replyWith("Sure! Here is the diagnosis you asked for."),
 		replyWith(validProposalJSON(t, nil)),
 	)
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	got, err := live.Diagnose(context.Background(), baseContext())
 	if err != nil {
@@ -269,7 +283,7 @@ func TestLiveGivesUpAfterOneRepair(t *testing.T) {
 		replyWith("still not json"),
 		replyWith("{ definitely not json either"),
 	)
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	_, err := live.Diagnose(context.Background(), baseContext())
 	if !errors.Is(err, ErrInvalidJSON) {
@@ -288,7 +302,7 @@ func TestLiveFailsOverOnUpstreamStatus(t *testing.T) {
 			t.Parallel()
 
 			srv, log := newProvider(t, replyStatus(code))
-			live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+			live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 			_, err := live.Diagnose(context.Background(), baseContext())
 			if !errors.Is(err, ErrUpstreamStatus) {
@@ -311,7 +325,7 @@ func TestStackFallsThroughFromRateLimitedProvider(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := newProvider(t, replyStatus(http.StatusTooManyRequests))
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	stack := newStack(t, live, NewHeuristic(nil, newFakeClock()))
 	got, err := stack.Diagnose(context.Background(), baseContext())
@@ -363,7 +377,7 @@ func TestLiveRejectsOversizedBody(t *testing.T) {
 			return
 		}
 	})
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	_, err := live.Diagnose(context.Background(), baseContext())
 	if !errors.Is(err, ErrOversizedResponse) {
@@ -386,7 +400,7 @@ func TestLiveRejectsSchemaViolationsWithoutRepair(t *testing.T) {
 			t.Parallel()
 
 			srv, log := newProvider(t, replyWith(validProposalJSON(t, override)))
-			live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+			live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 			if _, err := live.Diagnose(context.Background(), baseContext()); err == nil {
 				t.Fatal("Diagnose accepted a schema-violating proposal")
@@ -407,7 +421,7 @@ func TestLiveRejectsProviderErrorEnvelope(t *testing.T) {
 			return
 		}
 	})
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	if _, err := live.Diagnose(context.Background(), baseContext()); !errors.Is(err, ErrProviderError) {
 		t.Fatalf("error = %v, want ErrProviderError", err)
@@ -418,7 +432,7 @@ func TestLiveRejectsEmptyCompletion(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := newProvider(t, replyWith("   "))
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	if _, err := live.Diagnose(context.Background(), baseContext()); !errors.Is(err, ErrEmptyResponse) {
 		t.Fatalf("error = %v, want ErrEmptyResponse", err)
@@ -429,7 +443,7 @@ func TestLiveUnwrapsMarkdownFence(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := newProvider(t, replyWith("```json\n"+validProposalJSON(t, nil)+"\n```"))
-	live, _ := newLiveTier(t, srv.URL, 2*time.Second)
+	live, _ := newLiveTier(t, srv.URL, generousTimeout)
 
 	if _, err := live.Diagnose(context.Background(), baseContext()); err != nil {
 		t.Fatalf("Diagnose: %v", err)
@@ -448,7 +462,7 @@ func TestLiveNeverLogsTheCredential(t *testing.T) {
 		replyWith("still not json"),
 		replyWith(validProposalJSON(t, map[string]any{"recommended_action": "NOT_AN_ACTION"})),
 	)
-	live, buf := newLiveTier(t, srv.URL, 2*time.Second)
+	live, buf := newLiveTier(t, srv.URL, generousTimeout)
 
 	for i := 0; i < 4; i++ {
 		if _, err := live.Diagnose(context.Background(), baseContext()); err != nil && i == 0 {

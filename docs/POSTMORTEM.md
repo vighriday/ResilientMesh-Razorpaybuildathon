@@ -598,6 +598,23 @@ output. `go test ./...` lists its passing packages before the failing one, so th
 fifteen lines of `ok` with the cause cut off below. The gate said FAIL and showed nothing but
 successes. Failing gates now print the lines that match a failure signature, and the tail.
 
+**The same bet, in another package.** The next harness run failed somewhere else:
+`TestLiveNeverLogsTheCredential` in `internal/agent`, at 3.02 seconds against 0.01 in isolation.
+That test asserts the live tier never writes its API key to a log. It does not assert anything
+about latency, and yet it gave its HTTP client a two second timeout, which under whole-repository
+race load is a bet on scheduling rather than a bound on anything.
+
+I could not reproduce it. Five runs of the test alone, six of the package, and a full repository
+race pass all came back clean, so calling it confirmed would be overstating what I have. What I
+have is elimination: the client timeout is the only wall-clock dependency in that test, and the
+duration is consistent with the first call exceeding it. Twelve call sites now take a timeout
+generous enough that it cannot be reached on a loaded machine, and the one test whose subject
+*is* the timeout keeps its own short one.
+
+That is a fix made on a diagnosis rather than on a reproduction, and it is worth saying so. It is
+defensible here because removing an incidental constant cannot break a test that was passing, and
+because the alternative is leaving a gate that fails on somebody else's machine and not on mine.
+
 **What I take from it.** #10 was a flaky race gate caused by a real bug in a test helper. This is
 a flaky race gate caused by a wrong unit in a test helper. Twice now the concurrency gate has
 been the thing that broke, and both times the product was fine. That is not an argument for

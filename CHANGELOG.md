@@ -12,6 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 ### Fixed, found by the harness on a slower configuration
 - **A test budgeted in frames for something measured in seconds.** The SSE helper skipped heartbeat comments until a fixed count rather than a deadline, so sixty-four concurrent streams under the race detector queued more than thirty-two comments ahead of the event and healthy connections were reported as broken.
 - **`t.Fatal` called from spawned goroutines** in the same test, which exits only the calling goroutine and printed one cause as six failures.
+- **The same bet in `internal/agent`**: twelve tests whose subject is not latency gave their HTTP client a two-second timeout. Replaced with a timeout that cannot be reached on a loaded machine; `TestLiveTimesOut` keeps its own short one. Fixed on a diagnosis rather than a reproduction, which the post-mortem states plainly.
 - **`judge.sh` truncated a failing gate to its first fifteen lines**, which for `go test ./...` is fifteen lines of `ok` with the cause cut off below. Failing gates now print the lines matching a failure signature, and the tail.
 
 ### Fixed, found by re-running the README against the code

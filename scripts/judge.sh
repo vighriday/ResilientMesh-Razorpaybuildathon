@@ -70,13 +70,13 @@ gate() {
     printf '  %sFAIL%s  %s  (%ss)\n' "$RED" "$RESET" "$name" "$elapsed"
     # Show why it failed, not what came first. `go test ./...` prints its
     # passing packages before the failing one, so a leading excerpt is a list
-    # of successes with the cause cut off the bottom. This gate hid a real
-    # failure exactly once, which was once more than enough.
-    printf '%s
-' "$out" | grep -aE 'DATA RACE|^--- FAIL|^FAIL|^ *panic:|^# |test timed out' \
-      | head -12 | sed 's/^/        /'
-    printf '%s
-' "$out" | tail -12 | sed 's/^/        /'
+    # of successes with the cause cut off the bottom. The trailing context
+    # carries the assertion, because the test name alone does not say what
+    # broke. This gate hid a real failure exactly once, which was once more
+    # than enough.
+    printf '%s\n' "$out" | grep -aE -A 4 'DATA RACE|^--- FAIL|^ *panic:|^# |test timed out' \
+      | head -20 | sed 's/^/        /'
+    printf '%s\n' "$out" | tail -8 | sed 's/^/        /'
     ROWS+=("| $name | FAIL | $elapsed |")
     FAILED=$((FAILED + 1))
   fi
