@@ -55,6 +55,11 @@ type dossier struct {
 	// same package so a reader can see the two agree rather than be told they do.
 	Vectors []gateVector `json:"gate_vectors"`
 
+	// Decisions is how the gate ruled across this run, counted per decision
+	// rather than per incident. The published page animates the branch at the
+	// gate from this, so what a viewer watches is the real ratio.
+	Decisions decisionCounts `json:"decision_mix"`
+
 	// secrets never leave this process. It is lower-case so it cannot be
 	// marshalled: a redaction list that serialises itself would publish the
 	// exact values it exists to remove.
@@ -234,6 +239,11 @@ type invariantRow struct {
 	Name     string `json:"name"`
 	Prevents string `json:"prevents"`
 	Fired    int    `json:"fired"`
+}
+
+type decisionCounts struct {
+	Permitted int `json:"permitted"`
+	Refused   int `json:"refused"`
 }
 
 type actMeta struct {
@@ -601,6 +611,12 @@ func refreshExport(ctx context.Context, d *dossier, pg *store.Postgres) error {
 	d.Vetoes = vetoRowsExport(vetoes)
 	d.Invariants = captureInvariants(vetoes)
 
+	permitted, refused, err := decisionMix(ctx, pg)
+	if err != nil {
+		return fmt.Errorf("re-reading the decision mix: %w", err)
+	}
+	d.Decisions = decisionCounts{Permitted: permitted, Refused: refused}
+
 	st, err := stateCounts(ctx, pg)
 	if err != nil {
 		return fmt.Errorf("re-reading outcomes: %w", err)
@@ -698,4 +714,37 @@ func humanBytes(n int) string {
 	default:
 		return fmt.Sprintf("%d bytes", n)
 	}
+}
+
+// decisionMix counts how the gate actually ruled, decision by decision.
+//
+// The published page animates payments branching at the gate, and keying that
+// on an incident's final state badly understates the refusals: an incident that
+// was refused once and recovered on a later attempt ends RECOVERED, so a run
+// with thirty-four refusals showed two. A refusal is a property of a decision,
+// not of an incident, so it is counted where it happens.
+func decisionMix(ctx context.Context, pg *store.Postgres) (permitted, refused int, err error) {
+	err = pg.StreamAudit(ctx, func(e domain.AuditEntry) error {
+		switch e.Kind {
+		case domain.AuditGateDecision:
+			var d struct {
+				Action string `json:"action"`
+			}
+			if json.Unmarshal(e.Detail, &d) != nil {
+				return nil
+			}
+			if d.Action == string(domain.ActionAbstain) {
+				refused++
+			} else {
+				permitted++
+			}
+		case domain.AuditTerminalHalt:
+			// A terminal halt never reaches the gate: the edge stops it because
+			// no retry could change the outcome. It is still a refusal, and the
+			// most common one, so omitting it would flatter the page.
+			refused++
+		}
+		return nil
+	})
+	return permitted, refused, err
 }

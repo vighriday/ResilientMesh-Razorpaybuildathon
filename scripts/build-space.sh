@@ -23,3 +23,14 @@ size=$(wc -c < "$out")
 gz=$(gzip -9 -c "$out" | wc -c)
 printf 'gatekeeper.wasm  %s bytes (%s gzipped, which is what a browser downloads)\n' "$size" "$gz"
 printf 'wasm_exec.js     %s bytes, from %s\n' "$(wc -c < "$exec_js")" "$(go env GOROOT)"
+
+# Stamp every asset URL with the current revision.
+#
+# A static host and a browser cache will happily serve last week's JavaScript
+# beside this week's run.json, and the symptom is a page showing numbers that
+# never occurred together. It cost an hour of confusion once already. Versioning
+# the URLs makes each deploy a distinct resource, so there is nothing stale left
+# to serve.
+version=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
+sed -i -E "s/\?v=[A-Za-z0-9_.-]+/?v=${version}/g" space/index.html
+printf 'stamped space/index.html asset URLs with v=%s\n' "$version"

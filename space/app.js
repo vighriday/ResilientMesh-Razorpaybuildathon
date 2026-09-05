@@ -17,6 +17,13 @@
 
 'use strict';
 
+/* The version this page was deployed at, rewritten by scripts/build-space.sh.
+   Every asset URL carries it, because a browser that cached a previous deploy
+   would otherwise run last week's JavaScript against this week's data, and the
+   symptom of that is a page quietly showing the wrong numbers. */
+const PAGE_VERSION = (document.currentScript && new URL(document.currentScript.src).searchParams.get('v')) || 'dev';
+const WASM_URL = 'gatekeeper.wasm?v=' + PAGE_VERSION;
+
 /* ------------------------------------------------------------- helpers --- */
 
 const $ = (id) => document.getElementById(id);
@@ -223,7 +230,7 @@ let RUN = null;
 async function boot() {
   let res;
   try {
-    res = await fetch('run.json', { cache: 'no-cache' });
+    res = await fetch('run.json?v=' + PAGE_VERSION, { cache: 'no-cache' });
   } catch (err) {
     return bootFail('Could not load run.json: ' + err.message);
   }
@@ -923,9 +930,9 @@ async function loadWasm() {
        on my host" failure. */
     let mod;
     try {
-      mod = await WebAssembly.instantiateStreaming(fetch('gatekeeper.wasm'), go.importObject);
+      mod = await WebAssembly.instantiateStreaming(fetch(WASM_URL), go.importObject);
     } catch (_) {
-      const bytes = await (await fetch('gatekeeper.wasm')).arrayBuffer();
+      const bytes = await (await fetch(WASM_URL)).arrayBuffer();
       mod = await WebAssembly.instantiate(bytes, go.importObject);
     }
     go.run(mod.instance);

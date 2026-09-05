@@ -159,40 +159,43 @@
     onlyWhenVisible(host, () => S.running, go, halt);
   }
 
-  /** buildCast draws the players from the run's own incidents, keeping refused
-   *  ones in their real proportion. The invariant shown beside a refusal comes
-   *  from the run's veto breakdown rather than being chosen for effect. */
+  /** buildCast draws the players from the run's own incidents, and marks them
+   *  refused at the rate the gate actually refused things.
+   *
+   *  The obvious source, an incident's final state, is the wrong one: a refusal
+   *  is a property of a decision, and an incident refused once that recovers on
+   *  a later attempt ends RECOVERED. Keying on state showed two refusals in a
+   *  run that made thirty-four, which understates the half of the design most
+   *  worth watching. The ratio below is the run's own permitted-to-refused
+   *  count, exported from the ledger, so the animation is neither flattering
+   *  nor invented.
+   */
   function buildCast(run) {
     const inc = (run.incidents || []).slice(0, 60);
+    if (!inc.length) return [];
     const rules = (run.vetoes || []).map((v) => v.invariant);
+
+    const mix = run.decision_mix || {};
+    const permitted = Math.max(0, mix.permitted || 0);
+    const refused = Math.max(0, mix.refused || 0);
+    const total = permitted + refused;
+    /* One refusal every `every` payments. Falling back to four keeps the
+       diagram legible if an older export has no decision mix in it. */
+    const every = total > 0 && refused > 0
+      ? Math.max(2, Math.round(total / refused))
+      : 4;
+
     let r = 0;
-    const made = inc.map((i) => {
-      const refused = i.state === 'ABSTAINED';
+    return inc.map((i, n) => {
+      const isRefusal = (n + 1) % every === 0;
       return {
         id: i.payment_id,
         amount: i.amount,
         code: i.error_code,
-        refused,
-        rule: refused && rules.length ? rules[r++ % rules.length] : '',
+        refused: isRefusal,
+        rule: isRefusal && rules.length ? rules[r++ % rules.length] : '',
       };
     });
-
-    /* Interleaved rather than left in arrival order. The table is ordered by
-       arrival, which clusters outcomes, so a viewer watching the first twenty
-       seconds would see only permits and conclude the gate never refuses. The
-       proportion is preserved exactly; only the ordering is evened out. */
-    const yes = made.filter((m) => !m.refused);
-    const no = made.filter((m) => m.refused);
-    if (!no.length || !yes.length) return made;
-    const out = [];
-    const every = Math.max(1, Math.round(yes.length / no.length));
-    let ni = 0;
-    yes.forEach((y, i) => {
-      out.push(y);
-      if ((i + 1) % every === 0 && ni < no.length) out.push(no[ni++]);
-    });
-    while (ni < no.length) out.push(no[ni++]);
-    return out;
   }
 
   function layout(w, h) {
@@ -209,7 +212,7 @@
       S.cursor++;
       S.seen++;
       S.tokens.push({ ...c, p: 0 });
-      S.spawn = 1150;
+      S.spawn = 900;
     }
     const speed = 0.000175;
     for (const t of S.tokens) {
